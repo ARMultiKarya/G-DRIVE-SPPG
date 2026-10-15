@@ -15,6 +15,12 @@ Aplikasi ini dapat dijalankan secara lokal di komputer, maupun di-hosting secara
 
 ## 🌟 Fitur Utama
 
+- **👤 Sistem Multi-Akun (Ruang Link Pribadi per Orang):**
+  - Setiap pengguna (5 orang atau lebih) dapat **membuat akun sendiri** dan login secara terpisah.
+  - **Data Terisolasi:** Saat Anda login dengan akun Anda, **HANYA link Google Drive milik Anda yang muncul**. Pengguna lain memiliki ruang link masing-masing dan tidak akan tercampur!
+  - **Data Aman & Tidak Hilang:** Semua link yang Anda simpan akan tetap tersimpan aman di akun Anda dan tidak akan terhapus saat pengguna lain menggunakan aplikasi.
+  - Dilengkapi fitur ganti akun instan (*Quick Account Switcher*).
+
 - **🚀 Buka Google Drive Langsung (1-Klik):**
   - Klik tombol **"Buka Google Drive"** untuk langsung menuju ke file/folder Drive di tab baru.
   - Dilengkapi penghitung otomatis jumlah klik berkas dibuka (*contoh: 👁️ 48x dibuka*).
@@ -57,17 +63,40 @@ Aplikasi ini dapat dijalankan secara lokal di komputer, maupun di-hosting secara
 
 ```text
 LINK G-DRIVE SPPG/
-├── index.html        # Antarmuka utama aplikasi
-├── style.css         # Desain sistem dan tema (Dark/Light mode)
-├── app.js            # Logika aplikasi dan manajemen data
-├── qrcode.min.js     # Modul generator QR Code offline
-├── server.js         # Server HTTP lokal Node.js (Zero-dependency)
-├── package.json      # Konfigurasi npm
-├── BUKA_APLIKASI.bat # Peluncur 1-klik untuk Windows
-├── .gitignore        # Berkas pengecualian Git
-├── LICENSE           # Lisensi MIT
-└── README.md         # Dokumentasi aplikasi
+├── index.html          # Antarmuka utama aplikasi
+├── style.css           # Desain sistem dan tema (Dark/Light mode)
+├── app.js              # Logika aplikasi dan manajemen data
+├── firebase-config.js  # Konfigurasi Cloud Sync Firebase (Multi-User)
+├── qrcode.min.js       # Modul generator QR Code offline
+├── server.js           # Server HTTP lokal Node.js (Zero-dependency)
+├── package.json        # Konfigurasi npm
+├── BUKA_APLIKASI.bat   # Peluncur 1-klik untuk Windows
+├── .gitignore          # Berkas pengecualian Git
+├── LICENSE             # Lisensi MIT
+└── README.md           # Dokumentasi aplikasi
 ```
+
+---
+
+## 👥 Sinkronisasi Multi-User (5 Orang atau Lebih)
+
+Agar link yang Anda tambahkan **tidak hilang** dan **langsung muncul secara otomatis di layar 5 orang atau lebih** yang Anda bagikan link website-nya:
+
+Aplikasi ini telah terintegrasi dengan **Firebase Realtime Database (Gratis & Real-time)**:
+
+1. **Buka Firebase Console:** Masuk ke [console.firebase.google.com](https://console.firebase.google.com) menggunakan akun Google Anda.
+2. **Buat Proyek Baru:** Klik **Add Project** (beri nama misal: `sppg-gdrive-hub`).
+3. **Aktifkan Realtime Database:**
+   - Di menu samping, pilih **Build** > **Realtime Database** > klik **Create Database**.
+   - Pilih lokasi (misal: *Singapore*).
+   - Pada pilihan aturan keamanan (*Security rules*), pilih **Start in test mode** agar tim dapat langsung membaca dan menulis data link bersama.
+4. **Sambungkan ke Aplikasi:**
+   - Salin URL Database di bagian atas (contoh: `https://sppg-gdrive-hub-default-rtdb.asia-southeast1.firebasedatabase.app`).
+   - Buka aplikasi Anda, klik tombol **"Sync Cloud"** di pojok kanan atas, tempelkan URL tersebut, lalu klik **Hubungkan & Simpan** (atau masukkan langsung ke file `firebase-config.js`).
+5. **Selesai!**
+   - Saat Anda mengunggah aplikasi ini ke **GitHub Pages**, setiap orang yang membuka link website akan terhubung ke database yang sama.
+   - Setiap Anda (atau rekan tim) menambah, mengedit, atau menghapus link, perubahan akan **langsung muncul seketika secara real-time** di HP/laptop seluruh anggota tim tanpa perlu refresh halaman!
+
 
 ---
 

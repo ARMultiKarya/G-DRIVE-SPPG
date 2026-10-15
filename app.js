@@ -4,9 +4,12 @@
  */
 
 // Storage Keys
-const STORAGE_KEY = 'sppg_gdrive_links_v1';
+const BASE_STORAGE_KEY = 'sppg_gdrive_links_v1';
+const ACCOUNTS_STORAGE_KEY = 'sppg_registered_accounts_v1';
+const SESSION_STORAGE_KEY = 'sppg_active_session_v1';
 const THEME_STORAGE_KEY = 'sppg_gdrive_theme_pref';
 const VIEW_STORAGE_KEY = 'sppg_gdrive_view_pref';
+const CLOUD_CONFIG_STORAGE_KEY = 'sppg_firebase_config_v1';
 
 // Initial Starter Data
 const DEFAULT_LINKS = [
@@ -86,6 +89,7 @@ const DEFAULT_LINKS = [
 
 // App State
 let state = {
+  currentUser: null, // { id, username, fullName, role }
   links: [],
   searchQuery: '',
   selectedType: 'all',
@@ -94,7 +98,11 @@ let state = {
   viewMode: 'grid', // 'grid' | 'list'
   deletingId: null,
   activeQrUrl: null,
-  activeQrTitle: null
+  activeQrTitle: null,
+  cloudStatus: 'offline', // 'offline' | 'connecting' | 'online'
+  firebaseDb: null,
+  firebaseConfig: null,
+  firebaseUserLinksRef: null
 };
 
 // SVG Icon Definitions
@@ -185,41 +193,63 @@ const TYPE_COLORS = {
   file: 'var(--brand-blue)'
 };
 
+// Helper to get user-specific storage key
+function getUserLinksStorageKey(username) {
+  const safeUser = (username || 'admin').toLowerCase().trim();
+  return `sppg_user_links_${safeUser}`;
+}
+
 // ===================================================================
 // INITIALIZATION
 // ===================================================================
 document.addEventListener('DOMContentLoaded', () => {
   loadThemePreference();
   loadViewPreference();
+  initUserSession();
   loadLinks();
   initEventListeners();
   renderApp();
+  initFirebaseSync();
 });
 
-// Load stored links or set default
+// Load stored links for CURRENT LOGGED IN USER only
 function loadLinks() {
+  const username = state.currentUser ? state.currentUser.username : 'admin';
+  const userStorageKey = getUserLinksStorageKey(username);
+
   try {
-    const rawData = localStorage.getItem(STORAGE_KEY);
+    const rawData = localStorage.getItem(userStorageKey);
     if (rawData) {
       const parsed = JSON.parse(rawData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         state.links = parsed;
         return;
       }
     }
   } catch (err) {
-    console.error('Error loading stored links:', err);
+    console.error('Error loading stored links for user:', username, err);
   }
-  // Fallback to default starter links
-  state.links = [...DEFAULT_LINKS];
-  saveToStorage();
+
+  // Jika akun admin pertama kali buka, berikan contoh bawaan SPPG
+  if (username === 'admin') {
+    state.links = [...DEFAULT_LINKS];
+    saveToStorage();
+  } else {
+    // Akun pengguna baru dimulai dengan daftar bersih miliknya sendiri
+    state.links = [];
+    saveToStorage();
+  }
 }
 
 function saveToStorage() {
+  if (!state.currentUser) return;
+  const username = state.currentUser.username;
+  const userStorageKey = getUserLinksStorageKey(username);
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.links));
+    localStorage.setItem(userStorageKey, JSON.stringify(state.links));
   } catch (err) {
-    console.error('Error saving links to localStorage:', err);
+    console.error('Error saving links to localStorage for user:', username, err);
     showToast('Gagal menyimpan ke penyimpanan lokal browser', 'error');
   }
 }
@@ -238,11 +268,42 @@ function initEventListeners() {
   btnBackup.addEventListener('click', (e) => {
     e.stopPropagation();
     dataMenu.classList.toggle('show');
+    userMenu.classList.remove('show');
+  });
+
+  // User Profile Menu Toggle
+  const btnUserAccount = document.getElementById('btnUserAccount');
+  const userMenu = document.getElementById('userMenu');
+  btnUserAccount.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userMenu.classList.toggle('show');
+    dataMenu.classList.remove('show');
   });
 
   document.addEventListener('click', () => {
     dataMenu.classList.remove('show');
+    userMenu.classList.remove('show');
   });
+
+  // Auth & Account Modal Triggers
+  document.getElementById('btnOpenAuthModal').addEventListener('click', () => {
+    userMenu.classList.remove('show');
+    openAuthModal('login');
+  });
+  document.getElementById('btnBannerSwitchAccount').addEventListener('click', () => openAuthModal('login'));
+  document.getElementById('btnLogout').addEventListener('click', () => {
+    userMenu.classList.remove('show');
+    handleLogout();
+  });
+  document.getElementById('btnCloseAuthModal').addEventListener('click', closeAuthModal);
+
+  // Auth Form Tabs
+  document.getElementById('tabAuthLogin').addEventListener('click', () => switchAuthTab('login'));
+  document.getElementById('tabAuthRegister').addEventListener('click', () => switchAuthTab('register'));
+
+  // Auth Form Submits
+  document.getElementById('loginForm').addEventListener('submit', handleLoginSubmit);
+  document.getElementById('registerForm').addEventListener('submit', handleRegisterSubmit);
 
   document.getElementById('btnExportJson').addEventListener('click', exportDataJson);
   document.getElementById('importFileInput').addEventListener('change', handleImportJson);
@@ -372,6 +433,14 @@ function initEventListeners() {
     }
   });
 
+  // Cloud Sync Modal Triggers
+  document.getElementById('btnCloudSync').addEventListener('click', openCloudModal);
+  document.getElementById('btnCloseCloudModal').addEventListener('click', closeCloudModal);
+  document.getElementById('btnSaveCloudConfig').addEventListener('click', handleSaveCloudConfig);
+  document.getElementById('btnDisconnectCloud').addEventListener('click', handleDisconnectCloud);
+  document.getElementById('btnForceUploadCloud').addEventListener('click', () => uploadLinksToCloud(true));
+  document.getElementById('btnForceFetchCloud').addEventListener('click', fetchLinksFromCloud);
+
   // Click outside modal content to close
   document.getElementById('linkModal').addEventListener('click', (e) => {
     if (e.target.id === 'linkModal') closeModal();
@@ -381,6 +450,12 @@ function initEventListeners() {
   });
   document.getElementById('confirmModal').addEventListener('click', (e) => {
     if (e.target.id === 'confirmModal') closeDeleteModal();
+  });
+  document.getElementById('cloudModal').addEventListener('click', (e) => {
+    if (e.target.id === 'cloudModal') closeCloudModal();
+  });
+  document.getElementById('authModal').addEventListener('click', (e) => {
+    if (e.target.id === 'authModal') closeAuthModal();
   });
 }
 
@@ -779,6 +854,7 @@ function handleOpenDriveDirect(id) {
   item.clicks = (item.clicks || 0) + 1;
   item.lastOpenedAt = new Date().toISOString();
   saveToStorage();
+  syncLinkPatchToCloud(id, { clicks: item.clicks, lastOpenedAt: item.lastOpenedAt });
 
   // Fast UI update of the click counter without re-rendering everything
   const card = document.querySelector(`[data-card-id="${id}"] .click-counter`);
@@ -816,6 +892,7 @@ function toggleFavorite(id) {
 
   item.favorite = !item.favorite;
   saveToStorage();
+  syncLinkPatchToCloud(id, { favorite: item.favorite });
   renderApp();
 
   const msg = item.favorite 
@@ -915,6 +992,7 @@ function handleFormSubmit(e) {
         favorite,
         updatedAt: new Date().toISOString()
       };
+      syncLinkSaveToCloud(state.links[index]);
       showToast('Link Google Drive berhasil diperbarui!', 'success');
     }
   } else {
@@ -932,6 +1010,7 @@ function handleFormSubmit(e) {
       updatedAt: new Date().toISOString()
     };
     state.links.unshift(newLink);
+    syncLinkSaveToCloud(newLink);
     showToast('Link Google Drive baru berhasil disimpan!', 'success');
   }
 
@@ -1013,8 +1092,10 @@ function executeDelete() {
 
   const item = state.links.find(l => l.id === state.deletingId);
   const title = item ? item.title : 'Link';
+  const delId = state.deletingId;
 
-  state.links = state.links.filter(l => l.id !== state.deletingId);
+  state.links = state.links.filter(l => l.id !== delId);
+  syncLinkDeleteFromCloud(delId);
   saveToStorage();
   closeDeleteModal();
   renderApp();
@@ -1221,4 +1302,579 @@ function truncate(text, maxLen = 30) {
   if (!text) return '';
   if (text.length <= maxLen) return text;
   return text.substr(0, maxLen) + '...';
+}
+
+// ===================================================================
+// FIREBASE REALTIME CLOUD SYNCHRONIZATION (5+ PENGGUNA)
+// ===================================================================
+function getActiveFirebaseConfig() {
+  // 1. Prioritaskan konfigurasi di localStorage jika ada
+  try {
+    const saved = localStorage.getItem(CLOUD_CONFIG_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.databaseURL) return parsed;
+    }
+  } catch (err) {
+    console.warn('Error reading saved cloud config:', err);
+  }
+
+  // 2. Cek berkas firebase-config.js (window.FIREBASE_CONFIG)
+  if (typeof window.FIREBASE_CONFIG === 'object' && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) {
+    return window.FIREBASE_CONFIG;
+  }
+
+  return null;
+}
+
+function initFirebaseSync() {
+  const config = getActiveFirebaseConfig();
+  if (!config || !config.databaseURL) {
+    updateCloudStatusUI('offline', 'Sync Cloud', 'Data tersimpan di browser ini. Hubungkan Firebase agar 5 orang atau lebih dapat melihat & menambah link secara bersamaan.');
+    return;
+  }
+
+  updateCloudStatusUI('connecting', 'Menghubungkan...', 'Sedang menyambungkan ke Cloud Database...');
+
+  // Pastikan library Firebase SDK telah terunduh
+  if (typeof firebase === 'undefined') {
+    setTimeout(initFirebaseSync, 800);
+    return;
+  }
+
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(config);
+    }
+    state.firebaseDb = firebase.database();
+    state.firebaseConfig = config;
+
+    // Pantau status koneksi real-time Firebase
+    state.firebaseDb.ref('.info/connected').on('value', (snap) => {
+      const isOnline = snap.val() === true;
+      if (isOnline) {
+        state.cloudStatus = 'online';
+        updateCloudStatusUI('online', 'Online (5+ User)', 'Terhubung ke Firebase Realtime Database. Semua perubahan akan langsung sinkron otomatis ke seluruh perangkat.');
+      } else {
+        state.cloudStatus = 'offline';
+        updateCloudStatusUI('offline', 'Sync Cloud (Offline)', 'Koneksi terputus. Menunggu jaringan tersambung kembali...');
+      }
+    });
+
+    // Lepas listener lama jika ada
+    if (state.firebaseUserLinksRef) {
+      state.firebaseUserLinksRef.off();
+    }
+
+    // Pasang listener real-time KHUSUS untuk akun pengguna saat ini
+    const userPath = 'sppg_multiusers/' + state.currentUser.username + '/links';
+    state.firebaseUserLinksRef = state.firebaseDb.ref(userPath);
+
+    state.firebaseUserLinksRef.on('value', (snapshot) => {
+      const val = snapshot.val();
+      if (val) {
+        const remoteList = Array.isArray(val) ? val : Object.values(val);
+        state.links = remoteList;
+        saveToStorage();
+        renderApp();
+      } else {
+        // Jika cloud akun ini masih kosong dan kita punya data lokal, sinkronkan
+        if (state.links.length > 0) {
+          uploadLinksToCloud(false);
+        }
+      }
+    }, (err) => {
+      console.error('Firebase listen error:', err);
+      updateCloudStatusUI('offline', 'Sync Error', 'Gagal memuat dari Cloud: ' + err.message);
+    });
+
+  } catch (err) {
+    console.error('Failed to initialize Firebase:', err);
+    updateCloudStatusUI('offline', 'Sync Error', 'Konfigurasi Firebase tidak valid: ' + err.message);
+  }
+}
+
+function updateCloudStatusUI(status, label, modalDesc) {
+  state.cloudStatus = status;
+
+  const dot = document.getElementById('cloudStatusDot');
+  const text = document.getElementById('cloudStatusText');
+  const modalDot = document.getElementById('cloudModalDot');
+  const modalTitle = document.getElementById('cloudModalStatusTitle');
+  const modalDescEl = document.getElementById('cloudModalStatusDesc');
+  const actionsRow = document.getElementById('cloudSyncActions');
+  const btnDisconnect = document.getElementById('btnDisconnectCloud');
+
+  // Bersihkan kelas dot
+  [dot, modalDot].forEach(d => {
+    if (!d) return;
+    d.className = 'status-dot';
+    if (status === 'online') d.classList.add('dot-online');
+    else if (status === 'connecting') d.classList.add('dot-connecting');
+    else d.classList.add('dot-offline');
+  });
+
+  if (text) text.textContent = label || 'Sync Cloud';
+
+  if (modalTitle) {
+    if (status === 'online') modalTitle.textContent = '🟢 Cloud Realtime Aktif (Sinkron 5+ Pengguna)';
+    else if (status === 'connecting') modalTitle.textContent = '🟡 Sedang Menghubungkan ke Cloud...';
+    else modalTitle.textContent = '⚪ Mode Lokal (Hanya di Browser Ini)';
+  }
+
+  if (modalDescEl && modalDesc) {
+    modalDescEl.textContent = modalDesc;
+  }
+
+  if (actionsRow) {
+    if (status === 'online') actionsRow.classList.remove('hidden');
+    else actionsRow.classList.add('hidden');
+  }
+
+  if (btnDisconnect) {
+    if (status === 'online') btnDisconnect.classList.remove('hidden');
+    else btnDisconnect.classList.add('hidden');
+  }
+}
+
+function openCloudModal() {
+  const modal = document.getElementById('cloudModal');
+  const config = getActiveFirebaseConfig();
+
+  if (config) {
+    document.getElementById('firebaseDbUrlInput').value = config.databaseURL || '';
+    document.getElementById('firebaseApiKeyInput').value = config.apiKey || '';
+    document.getElementById('firebaseProjectIdInput').value = config.projectId || '';
+  }
+
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeCloudModal() {
+  const modal = document.getElementById('cloudModal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function handleSaveCloudConfig() {
+  const dbUrl = document.getElementById('firebaseDbUrlInput').value.trim();
+  const apiKey = document.getElementById('firebaseApiKeyInput').value.trim();
+  const projectId = document.getElementById('firebaseProjectIdInput').value.trim();
+
+  if (!dbUrl) {
+    showToast('Harap masukkan URL Firebase Realtime Database', 'error');
+    document.getElementById('firebaseDbUrlInput').focus();
+    return;
+  }
+
+  if (!dbUrl.includes('.firebasedatabase.app') && !dbUrl.includes('.firebaseio.com')) {
+    showToast('URL database harus berupa alamat Firebase (contoh: https://xxx.asia-southeast1.firebasedatabase.app)', 'error');
+    return;
+  }
+
+  const newConfig = {
+    databaseURL: dbUrl,
+    apiKey: apiKey || 'AIzaSyPlaceholder',
+    projectId: projectId || dbUrl.split('//')[1]?.split('.')[0] || 'sppg-gdrive'
+  };
+
+  try {
+    localStorage.setItem(CLOUD_CONFIG_STORAGE_KEY, JSON.stringify(newConfig));
+    showToast('Pengaturan Cloud berhasil disimpan. Menghubungkan...', 'info');
+    closeCloudModal();
+    initFirebaseSync();
+  } catch (err) {
+    showToast('Gagal menyimpan pengaturan: ' + err.message, 'error');
+  }
+}
+
+function handleDisconnectCloud() {
+  const confirmed = confirm('Apakah Anda yakin ingin memutuskan sinkronisasi Cloud? Aplikasi akan kembali ke mode lokal.');
+  if (!confirmed) return;
+
+  try {
+    localStorage.removeItem(CLOUD_CONFIG_STORAGE_KEY);
+    if (state.firebaseDb) {
+      state.firebaseDb.goOffline();
+      state.firebaseDb = null;
+    }
+    updateCloudStatusUI('offline', 'Sync Cloud', 'Data tersimpan di browser ini.');
+    showToast('Koneksi Cloud diputuskan. Aplikasi berjalan dalam mode lokal.', 'info');
+    closeCloudModal();
+  } catch (err) {
+    console.error('Disconnect error:', err);
+  }
+}
+
+// Sinkronisasi data ke Cloud KHUSUS akun aktif
+function getUserCloudPath() {
+  const username = state.currentUser ? state.currentUser.username : 'admin';
+  return 'sppg_multiusers/' + username + '/links';
+}
+
+function syncLinkSaveToCloud(link) {
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  try {
+    state.firebaseDb.ref(getUserCloudPath() + '/' + link.id).set(link);
+  } catch (err) {
+    console.warn('Sync save to cloud error:', err);
+  }
+}
+
+function syncLinkDeleteFromCloud(id) {
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  try {
+    state.firebaseDb.ref(getUserCloudPath() + '/' + id).remove();
+  } catch (err) {
+    console.warn('Sync delete from cloud error:', err);
+  }
+}
+
+function syncLinkPatchToCloud(id, updates) {
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  try {
+    state.firebaseDb.ref(getUserCloudPath() + '/' + id).update(updates);
+  } catch (err) {
+    console.warn('Sync patch to cloud error:', err);
+  }
+}
+
+function uploadLinksToCloud(showToastMsg = true) {
+  if (!state.firebaseDb || !state.currentUser) {
+    showToast('Database Cloud belum terhubung.', 'error');
+    return;
+  }
+
+  const dataMap = {};
+  state.links.forEach(item => {
+    dataMap[item.id] = item;
+  });
+
+  state.firebaseDb.ref(getUserCloudPath()).set(dataMap)
+    .then(() => {
+      if (showToastMsg) {
+        showToast(`Berhasil mengunggah ${state.links.length} link akun @${state.currentUser.username} ke Cloud!`, 'success');
+      }
+    })
+    .catch(err => {
+      showToast('Gagal mengunggah ke Cloud: ' + err.message, 'error');
+    });
+}
+
+function fetchLinksFromCloud() {
+  if (!state.firebaseDb || !state.currentUser) {
+    showToast('Database Cloud belum terhubung.', 'error');
+    return;
+  }
+
+  state.firebaseDb.ref(getUserCloudPath()).once('value')
+    .then(snap => {
+      const val = snap.val();
+      if (val) {
+        const remoteList = Array.isArray(val) ? val : Object.values(val);
+        state.links = remoteList;
+        saveToStorage();
+        renderApp();
+        showToast(`Berhasil menarik ${remoteList.length} link akun @${state.currentUser.username} dari Cloud!`, 'success');
+      } else {
+        showToast('Database Cloud akun ini masih kosong.', 'info');
+      }
+    })
+    .catch(err => {
+      showToast('Gagal mengambil data dari Cloud: ' + err.message, 'error');
+    });
+}
+
+// ===================================================================
+// MULTI-ACCOUNT AUTHENTICATION & USER MANAGEMENT
+// ===================================================================
+const DEFAULT_ACCOUNTS = [
+  {
+    id: 'usr-admin',
+    username: 'admin',
+    fullName: 'Administrator SPPG',
+    password: 'admin',
+    role: 'SPPG Admin',
+    createdAt: new Date().toISOString()
+  }
+];
+
+function getRegisteredAccounts() {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (err) {
+    console.warn('Error reading accounts:', err);
+  }
+  // Simpan akun bawaan
+  localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(DEFAULT_ACCOUNTS));
+  return DEFAULT_ACCOUNTS;
+}
+
+function saveRegisteredAccounts(accounts) {
+  try {
+    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+  } catch (err) {
+    console.error('Error saving accounts:', err);
+  }
+}
+
+function initUserSession() {
+  let session = null;
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) session = JSON.parse(raw);
+  } catch (err) {
+    console.warn('Error reading session:', err);
+  }
+
+  const accounts = getRegisteredAccounts();
+
+  if (session && session.username) {
+    const matched = accounts.find(a => a.username.toLowerCase() === session.username.toLowerCase());
+    state.currentUser = matched || session;
+  } else {
+    // Default session: akun pertama (admin)
+    state.currentUser = accounts[0];
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state.currentUser));
+  }
+
+  updateUserUI();
+}
+
+function updateUserUI() {
+  if (!state.currentUser) return;
+  const user = state.currentUser;
+
+  // Inisial avatar (misal 'A' atau 'BS')
+  const initials = user.fullName
+    ? user.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+    : user.username[0].toUpperCase();
+
+  const userAvatar = document.getElementById('userAvatar');
+  const navUserName = document.getElementById('navUserName');
+  const navUserRole = document.getElementById('navUserRole');
+  const menuUserFullName = document.getElementById('menuUserFullName');
+  const menuUsername = document.getElementById('menuUsername');
+  const scopeUserFullName = document.getElementById('scopeUserFullName');
+  const scopeUsername = document.getElementById('scopeUsername');
+
+  if (userAvatar) userAvatar.textContent = initials;
+  if (navUserName) navUserName.textContent = user.fullName ? user.fullName.split(' ')[0] : user.username;
+  if (navUserRole) navUserRole.textContent = user.role || 'SPPG User';
+  if (menuUserFullName) menuUserFullName.textContent = user.fullName || user.username;
+  if (menuUsername) menuUsername.textContent = '@' + user.username;
+  if (scopeUserFullName) scopeUserFullName.textContent = user.fullName || user.username;
+  if (scopeUsername) scopeUsername.textContent = '@' + user.username;
+}
+
+function openAuthModal(defaultTab = 'login') {
+  const modal = document.getElementById('authModal');
+  switchAuthTab(defaultTab);
+  renderQuickAccountsList();
+
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+
+  if (defaultTab === 'login') {
+    setTimeout(() => document.getElementById('loginUsername').focus(), 80);
+  } else {
+    setTimeout(() => document.getElementById('regFullName').focus(), 80);
+  }
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById('authModal');
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function switchAuthTab(tab) {
+  const tabLogin = document.getElementById('tabAuthLogin');
+  const tabReg = document.getElementById('tabAuthRegister');
+  const formLogin = document.getElementById('loginForm');
+  const formReg = document.getElementById('registerForm');
+  const modalTitle = document.getElementById('authModalTitle');
+
+  if (tab === 'register') {
+    tabLogin.classList.remove('active');
+    tabReg.classList.add('active');
+    formLogin.classList.add('hidden');
+    formReg.classList.remove('hidden');
+    modalTitle.textContent = 'Buat Akun Baru SPPG';
+  } else {
+    tabReg.classList.remove('active');
+    tabLogin.classList.add('active');
+    formReg.classList.add('hidden');
+    formLogin.classList.remove('hidden');
+    modalTitle.textContent = 'Masuk ke Akun Anda';
+  }
+}
+
+function handleLoginSubmit(e) {
+  e.preventDefault();
+  const username = document.getElementById('loginUsername').value.trim().toLowerCase();
+  const password = document.getElementById('loginPassword').value;
+
+  if (!username) {
+    showToast('Masukkan username Anda', 'error');
+    return;
+  }
+
+  const accounts = getRegisteredAccounts();
+  const found = accounts.find(a => a.username.toLowerCase() === username);
+
+  if (!found) {
+    showToast(`Akun dengan username "${username}" belum terdaftar. Silakan buat akun baru.`, 'error');
+    switchAuthTab('register');
+    document.getElementById('regUsername').value = username;
+    return;
+  }
+
+  if (found.password && found.password !== password) {
+    showToast('Password yang Anda masukkan salah.', 'error');
+    document.getElementById('loginPassword').focus();
+    return;
+  }
+
+  // Login Berhasil
+  switchUserAccount(found);
+  closeAuthModal();
+  showToast(`Selamat datang kembali, ${found.fullName}!`, 'success');
+}
+
+function handleRegisterSubmit(e) {
+  e.preventDefault();
+  const fullName = document.getElementById('regFullName').value.trim();
+  const username = document.getElementById('regUsername').value.trim().toLowerCase();
+  const password = document.getElementById('regPassword').value;
+
+  if (!fullName) {
+    showToast('Harap isi Nama Lengkap Anda', 'error');
+    return;
+  }
+
+  if (!username || username.length < 3) {
+    showToast('Username minimal 3 karakter (tanpa spasi)', 'error');
+    return;
+  }
+
+  if (!/^[a-z0-9_]+$/.test(username)) {
+    showToast('Username hanya boleh huruf kecil, angka, atau garis bawah (_)', 'error');
+    return;
+  }
+
+  if (!password || password.length < 4) {
+    showToast('Password minimal 4 karakter', 'error');
+    return;
+  }
+
+  const accounts = getRegisteredAccounts();
+  if (accounts.some(a => a.username.toLowerCase() === username)) {
+    showToast(`Username "${username}" sudah digunakan. Silakan gunakan username lain.`, 'error');
+    document.getElementById('regUsername').focus();
+    return;
+  }
+
+  // Buat akun baru
+  const newAccount = {
+    id: 'usr-' + Date.now(),
+    username,
+    fullName,
+    password,
+    role: 'SPPG Member',
+    createdAt: new Date().toISOString()
+  };
+
+  accounts.push(newAccount);
+  saveRegisteredAccounts(accounts);
+
+  // Jika terhubung ke Cloud, simpan info akun ke Firebase
+  if (state.firebaseDb && state.cloudStatus === 'online') {
+    try {
+      state.firebaseDb.ref('sppg_accounts/' + username).set({
+        username,
+        fullName,
+        role: 'SPPG Member',
+        createdAt: newAccount.createdAt
+      });
+    } catch (err) {
+      console.warn('Error registering account to Firebase:', err);
+    }
+  }
+
+  // Otomatis login ke akun baru
+  switchUserAccount(newAccount);
+  closeAuthModal();
+  showToast(`Akun @${username} berhasil dibuat! Ruang link pribadi Anda telah siap.`, 'success');
+}
+
+function switchUserAccount(user) {
+  state.currentUser = user;
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+  updateUserUI();
+
+  // Muat link khusus akun ini
+  loadLinks();
+  renderApp();
+
+  // Sambungkan ulang ke Firebase pada path akun ini
+  if (state.firebaseDb) {
+    initFirebaseSync();
+  }
+}
+
+function handleLogout() {
+  const confirmed = confirm(`Apakah Anda yakin ingin keluar dari akun @${state.currentUser.username}?`);
+  if (!confirmed) return;
+
+  openAuthModal('login');
+  showToast('Anda telah keluar. Silakan masuk atau pilih akun.', 'info');
+}
+
+function renderQuickAccountsList() {
+  const container = document.getElementById('quickAccountsList');
+  if (!container) return;
+
+  const accounts = getRegisteredAccounts();
+  const currentUsername = state.currentUser ? state.currentUser.username : '';
+
+  let html = '';
+  accounts.forEach(acc => {
+    const isCurrent = acc.username.toLowerCase() === currentUsername.toLowerCase();
+    const initials = acc.fullName
+      ? acc.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+      : acc.username[0].toUpperCase();
+
+    html += `
+      <div class="quick-account-item ${isCurrent ? 'is-current' : ''}" data-username="${escapeHtml(acc.username)}">
+        <div class="quick-acc-left">
+          <div class="quick-acc-avatar">${initials}</div>
+          <div class="quick-acc-names">
+            <span class="quick-acc-name">${escapeHtml(acc.fullName)}</span>
+            <span class="quick-acc-username">@${escapeHtml(acc.username)}</span>
+          </div>
+        </div>
+        <span class="quick-acc-action">${isCurrent ? '● Sedang Aktif' : 'Ganti ke Akun Ini ➜'}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('.quick-account-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const username = item.getAttribute('data-username');
+      const targetUser = accounts.find(a => a.username === username);
+      if (targetUser) {
+        switchUserAccount(targetUser);
+        closeAuthModal();
+        showToast(`Beralih ke akun ${targetUser.fullName}`, 'success');
+      }
+    });
+  });
 }

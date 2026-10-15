@@ -41,6 +41,15 @@
         </div>
 
         <div class="nav-actions">
+          <!-- Cloud Sync Button -->
+          <button id="btnCloudSync" class="btn btn-secondary cloud-sync-btn" title="Pengaturan Sinkronisasi Cloud (5+ Pengguna)">
+            <span id="cloudStatusDot" class="status-dot dot-offline"></span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+            </svg>
+            <span id="cloudStatusText">Sync Cloud</span>
+          </button>
+
           <!-- Backup & Restore Buttons -->
           <div class="btn-group-dropdown">
             <button id="btnBackup" class="btn btn-secondary btn-icon" title="Cadangkan atau Pulihkan Data (Backup/Restore)">
@@ -81,6 +90,45 @@
             </div>
           </div>
 
+          <!-- User Profile / Account Dropdown -->
+          <div class="btn-group-dropdown">
+            <button id="btnUserAccount" class="btn btn-secondary user-profile-btn" title="Akun Pengguna">
+              <div id="userAvatar" class="user-avatar-circle">A</div>
+              <div class="user-btn-text">
+                <span id="navUserName" class="nav-user-name">Admin</span>
+                <span id="navUserRole" class="nav-user-role">SPPG</span>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div id="userMenu" class="dropdown-menu dropdown-menu-end">
+              <div class="user-menu-header">
+                <strong id="menuUserFullName">Administrator SPPG</strong>
+                <span id="menuUsername" class="menu-username-sub">@admin</span>
+                <span class="badge-private-scope">🔒 Ruang Link Pribadi</span>
+              </div>
+              <hr class="dropdown-divider">
+              <button id="btnOpenAuthModal" class="dropdown-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="8.5" cy="7" r="4"></circle>
+                  <line x1="20" y1="8" x2="20" y2="14"></line>
+                  <line x1="23" y1="11" x2="17" y2="11"></line>
+                </svg>
+                Ganti Akun / Buat Akun Baru
+              </button>
+              <button id="btnLogout" class="dropdown-item text-danger">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                  <polyline points="16 17 21 12 16 7"></polyline>
+                  <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Keluar (Logout)
+              </button>
+            </div>
+          </div>
+
           <!-- Theme Toggle Button -->
           <button id="themeToggleBtn" class="btn btn-icon btn-secondary" title="Ganti Mode Gelap / Terang">
             <svg id="moonIcon" class="icon-theme" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -114,6 +162,31 @@
     <!-- Main Container -->
     <main class="main-content">
       
+      <!-- User Scope Banner (Shows who is currently logged in) -->
+      <section class="user-scope-banner">
+        <div class="user-scope-content">
+          <div class="user-scope-badge">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Ruang Akun Pribadi</span>
+          </div>
+          <div class="user-scope-text">
+            <span>Link yang ditampilkan adalah milik: <strong id="scopeUserFullName">Administrator SPPG</strong> (<code id="scopeUsername">@admin</code>). Pengguna lain memiliki ruang link masing-masing.</span>
+          </div>
+        </div>
+        <button type="button" id="btnBannerSwitchAccount" class="btn btn-secondary btn-sm" title="Ganti akun pengguna">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+          </svg>
+          Ganti Akun
+        </button>
+      </section>
+
       <!-- Stats & Quick Overview Cards -->
       <section class="stats-grid">
         <div class="stat-card" data-stat-filter="all">
@@ -508,11 +581,200 @@
       </div>
     </div>
 
+    <!-- Modal Pengaturan Cloud Sync Firebase -->
+    <div id="cloudModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-header" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 class="modal-title">Sinkronisasi Cloud (5+ Pengguna)</h2>
+              <span class="modal-subtitle">Data link otomatis tersimpan bersama & real-time</span>
+            </div>
+          </div>
+          <button id="btnCloseCloudModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Status Card -->
+          <div class="cloud-status-card" id="cloudStatusCard">
+            <div class="cloud-status-indicator">
+              <span id="cloudModalDot" class="status-dot dot-offline"></span>
+              <strong id="cloudModalStatusTitle">Mode Lokal (Hanya di Komputer Ini)</strong>
+            </div>
+            <p id="cloudModalStatusDesc">Data saat ini tersimpan di browser ini. Hubungkan ke database Firebase agar 5 orang atau lebih dapat melihat, menambah, dan mengedit link yang sama secara otomatis dari HP / Laptop mana pun.</p>
+          </div>
+
+          <!-- Quick Action Buttons if Connected -->
+          <div id="cloudSyncActions" class="cloud-actions-row hidden">
+            <button type="button" id="btnForceUploadCloud" class="btn btn-secondary btn-sm" title="Upload semua link lokal ke Cloud">
+              ⬆️ Unggah Data Lokal ke Cloud
+            </button>
+            <button type="button" id="btnForceFetchCloud" class="btn btn-secondary btn-sm" title="Ambil data terbaru dari Cloud">
+              ⬇️ Tarik Ulang dari Cloud
+            </button>
+          </div>
+
+          <!-- Firebase Configuration Form -->
+          <div class="form-group" style="margin-top: 1rem;">
+            <label for="firebaseDbUrlInput" class="form-label">
+              Firebase Realtime Database URL <span class="required-star">*</span>
+            </label>
+            <input 
+              type="url" 
+              id="firebaseDbUrlInput" 
+              class="form-control" 
+              placeholder="https://proyek-anda-default-rtdb.asia-southeast1.firebasedatabase.app"
+              autocomplete="off"
+            >
+            <div class="form-hint">
+              URL database dari Firebase Console (berakhiran <code>.firebasedatabase.app</code> atau <code>.firebaseio.com</code>).
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="firebaseApiKeyInput" class="form-label">API Key (Opsional)</label>
+              <input 
+                type="text" 
+                id="firebaseApiKeyInput" 
+                class="form-control" 
+                placeholder="AIzaSy..."
+                autocomplete="off"
+              >
+            </div>
+            <div class="form-group">
+              <label for="firebaseProjectIdInput" class="form-label">Project ID (Opsional)</label>
+              <input 
+                type="text" 
+                id="firebaseProjectIdInput" 
+                class="form-control" 
+                placeholder="sppg-gdrive-hub"
+                autocomplete="off"
+              >
+            </div>
+          </div>
+
+          <!-- Guide Box -->
+          <details class="guide-box">
+            <summary><strong>📖 Panduan 3 Langkah Buat Database Firebase Gratis:</strong></summary>
+            <ol class="guide-steps">
+              <li>Buka <a href="https://console.firebase.google.com" target="_blank" rel="noopener">console.firebase.google.com</a> dan login dengan akun Google Anda.</li>
+              <li>Klik <strong>Add Project</strong> (beri nama misal: <code>sppg-gdrive-hub</code>), ikuti hingga selesai (100% gratis).</li>
+              <li>Di menu kiri, pilih <strong>Build > Realtime Database</strong> > klik <strong>Create Database</strong>.</li>
+              <li>Pilih lokasi (misal <em>Singapore</em>) dan pilih mode <strong>Start in test mode</strong> (agar tim Anda bisa langsung membaca & menyimpan data).</li>
+              <li>Salin link URL database di bagian atas tabel, lalu tempelkan ke kolom URL di atas dan klik <strong>Hubungkan & Simpan</strong>!</li>
+            </ol>
+          </details>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btnDisconnectCloud" class="btn btn-secondary text-danger hidden">Putuskan Koneksi Cloud</button>
+          <button type="button" id="btnSaveCloudConfig" class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Hubungkan & Simpan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Autentikasi (Login & Buat Akun Baru) -->
+    <div id="authModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog modal-dialog-sm">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-header" style="background: rgba(37, 99, 235, 0.15); color: #2563eb;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+            <div>
+              <h2 id="authModalTitle" class="modal-title">Kelola Akun SPPG</h2>
+              <span class="modal-subtitle">Ruang link pribadi untuk masing-masing orang</span>
+            </div>
+          </div>
+          <button id="btnCloseAuthModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Auth Tabs -->
+          <div class="auth-tabs">
+            <button id="tabAuthLogin" class="auth-tab active" type="button">Masuk (Login)</button>
+            <button id="tabAuthRegister" class="auth-tab" type="button">Buat Akun Baru</button>
+          </div>
+
+          <!-- LOGIN FORM -->
+          <form id="loginForm" class="auth-form-view">
+            <div class="form-group">
+              <label for="loginUsername" class="form-label">Username <span class="required-star">*</span></label>
+              <input type="text" id="loginUsername" class="form-control" placeholder="Contoh: ahmad, budi, admin..." required autocomplete="username">
+            </div>
+            <div class="form-group">
+              <label for="loginPassword" class="form-label">Password <span class="required-star">*</span></label>
+              <input type="password" id="loginPassword" class="form-control" placeholder="Masukkan password Anda" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1.25rem;">
+              <span>Masuk ke Akun Saya</span>
+            </button>
+          </form>
+
+          <!-- REGISTER FORM -->
+          <form id="registerForm" class="auth-form-view hidden">
+            <div class="form-group">
+              <label for="regFullName" class="form-label">Nama Lengkap <span class="required-star">*</span></label>
+              <input type="text" id="regFullName" class="form-control" placeholder="Contoh: Ahmad Rizky" required autocomplete="name">
+            </div>
+            <div class="form-group">
+              <label for="regUsername" class="form-label">Username (ID Akun) <span class="required-star">*</span></label>
+              <input type="text" id="regUsername" class="form-control" placeholder="Hanya huruf kecil/angka (tanpa spasi)" required autocomplete="username">
+              <div class="form-hint">Username ini akan menjadi identitas ruang link Anda.</div>
+            </div>
+            <div class="form-group">
+              <label for="regPassword" class="form-label">Password <span class="required-star">*</span></label>
+              <input type="password" id="regPassword" class="form-control" placeholder="Minimal 4 karakter" required autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1.25rem;">
+              <span>Daftar & Masuk Sekarang</span>
+            </button>
+          </form>
+
+          <!-- Quick Account Switcher on this device -->
+          <div class="quick-accounts-section">
+            <span class="quick-accounts-label">Akun Terdaftar di Perangkat Ini:</span>
+            <div id="quickAccountsList" class="quick-accounts-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   </div>
 
+  <script src="firebase-config.js"></script>
+  <!-- Firebase App & Database Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="qrcode.min.js"></script>
   <script src="app.js"></script>
 </body>
