@@ -14,11 +14,11 @@
 
 window.FIREBASE_CONFIG = {
   // Ganti dengan konfigurasi Firebase Anda:
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "", // Contoh: "https://nama-project-default-rtdb.asia-southeast1.firebasedatabase.app"
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyAlkr8rLBo0HUG5LkCWamKfzVB_v9iW3zQ",
+  authDomain: "g-drive-sppg.firebaseapp.com",
+  databaseURL: "https://g-drive-sppg-default-rtdb.asia-southeast1.firebasedatabase.app", // Contoh: "https://g-drive-sppg-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  projectId: "g-drive-sppg",
+  storageBucket: "g-drive-sppg.firebasestorage.app",
+  messagingSenderId: "769910085559",
+  appId: "1:769910085559:web:ca99ec46641535c63cba32"
 };
