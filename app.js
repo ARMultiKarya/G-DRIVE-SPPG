@@ -218,10 +218,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Load stored links (Admin can view all users' links or specific user; members only view their own)
+// Load stored links (Admin can view all users' links or specific user; members only view their own; demo loads sample links)
 function loadLinks() {
   if (!state.currentUser) {
     state.links = [];
+    return;
+  }
+
+  // Jika Pengunjung Mode Demo: muat data contoh SPPG untuk dieksplorasi
+  if (state.currentUser.username === 'demo') {
+    try {
+      const raw = localStorage.getItem('sppg_user_links_demo');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          state.links = parsed;
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading demo links:', e);
+    }
+
+    state.links = DEFAULT_LINKS.map(item => ({
+      ...item,
+      ownerUsername: 'demo',
+      ownerFullName: 'Mode Demo (Tamu SPPG)'
+    }));
     return;
   }
 
@@ -304,6 +327,17 @@ function loadLinks() {
 
 function saveToStorage() {
   if (!state.currentUser) return;
+
+  // Jika mode demo, simpan ke memori demo lokal tanpa sentuh cloud atau akun lain
+  if (state.currentUser.username === 'demo') {
+    try {
+      localStorage.setItem('sppg_user_links_demo', JSON.stringify(state.links));
+    } catch (err) {
+      console.error('Save demo links error:', err);
+    }
+    return;
+  }
+
   const isAdm = isAdminUser(state.currentUser);
 
   if (isAdm && state.adminViewScope === '__all__') {
@@ -452,11 +486,9 @@ function initEventListeners() {
     btnSwitchToLogin.addEventListener('click', () => switchAuthTab('login'));
   }
 
-  const btnAuthOpenAdminPass = document.getElementById('btnAuthOpenAdminPass');
-  if (btnAuthOpenAdminPass) {
-    btnAuthOpenAdminPass.addEventListener('click', () => {
-      openAdminPasswordModal();
-    });
+  const btnGateDemoMode = document.getElementById('btnGateDemoMode');
+  if (btnGateDemoMode) {
+    btnGateDemoMode.addEventListener('click', enterDemoMode);
   }
 
   // Admin Modal & Trigger Event Listeners
@@ -1611,6 +1643,11 @@ function initFirebaseSync() {
     // Lepas listener lama jika ada
     if (state.firebaseUserLinksRef) {
       state.firebaseUserLinksRef.off();
+      state.firebaseUserLinksRef = null;
+    }
+
+    if (!state.currentUser || state.currentUser.username === 'demo') {
+      return;
     }
 
     // Pasang listener real-time KHUSUS untuk akun pengguna saat ini
@@ -1761,7 +1798,7 @@ function getUserCloudPath() {
 }
 
 function syncLinkSaveToCloud(link) {
-  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser || state.currentUser.username === 'demo') return;
   try {
     state.firebaseDb.ref(getUserCloudPath() + '/' + link.id).set(link);
   } catch (err) {
@@ -1770,7 +1807,7 @@ function syncLinkSaveToCloud(link) {
 }
 
 function syncLinkDeleteFromCloud(id) {
-  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser || state.currentUser.username === 'demo') return;
   try {
     state.firebaseDb.ref(getUserCloudPath() + '/' + id).remove();
   } catch (err) {
@@ -1779,7 +1816,7 @@ function syncLinkDeleteFromCloud(id) {
 }
 
 function syncLinkPatchToCloud(id, updates) {
-  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser) return;
+  if (!state.firebaseDb || state.cloudStatus !== 'online' || !state.currentUser || state.currentUser.username === 'demo') return;
   try {
     state.firebaseDb.ref(getUserCloudPath() + '/' + id).update(updates);
   } catch (err) {
@@ -1788,8 +1825,8 @@ function syncLinkPatchToCloud(id, updates) {
 }
 
 function uploadLinksToCloud(showToastMsg = true) {
-  if (!state.firebaseDb || !state.currentUser) {
-    showToast('Database Cloud belum terhubung.', 'error');
+  if (!state.firebaseDb || !state.currentUser || state.currentUser.username === 'demo') {
+    showToast('Database Cloud belum terhubung atau sedang dalam Mode Demo.', 'error');
     return;
   }
 
@@ -1810,8 +1847,8 @@ function uploadLinksToCloud(showToastMsg = true) {
 }
 
 function fetchLinksFromCloud() {
-  if (!state.firebaseDb || !state.currentUser) {
-    showToast('Database Cloud belum terhubung.', 'error');
+  if (!state.firebaseDb || !state.currentUser || state.currentUser.username === 'demo') {
+    showToast('Database Cloud belum terhubung atau sedang dalam Mode Demo.', 'error');
     return;
   }
 
@@ -1848,10 +1885,18 @@ const DEFAULT_ACCOUNTS = [
   }
 ];
 
+const DEMO_ACCOUNT = {
+  id: 'usr-demo',
+  username: 'demo',
+  fullName: 'Pengunjung Demo SPPG',
+  role: 'Demo Tamu'
+};
+
 function isAdminUser(user = state.currentUser) {
   if (!user) return false;
   const username = (user.username || '').toLowerCase();
   const role = (user.role || '').toLowerCase();
+  if (username === 'demo') return false; // Demo bukan Admin
   return username === 'admin' || role === 'admin' || role === 'sppg admin';
 }
 
@@ -1890,8 +1935,12 @@ function initUserSession() {
   const accounts = getRegisteredAccounts();
 
   if (session && session.username) {
-    const matched = accounts.find(a => a.username.toLowerCase() === session.username.toLowerCase());
-    state.currentUser = matched || session;
+    if (session.username.toLowerCase() === 'demo') {
+      state.currentUser = DEMO_ACCOUNT;
+    } else {
+      const matched = accounts.find(a => a.username.toLowerCase() === session.username.toLowerCase());
+      state.currentUser = matched || session;
+    }
   } else {
     // Pengguna belum login atau baru pertama kali membuka link!
     state.currentUser = null;
@@ -1936,26 +1985,19 @@ function updateUserUI() {
     if (scopeAdminBadge) scopeAdminBadge.classList.add('hidden');
     if (adminAccessToolbar) adminAccessToolbar.classList.add('hidden');
 
-    // Sembunyikan tombol logout saat belum login
+    // Sembunyikan SEMUA tombol admin & logout saat belum login
     if (btnNavLogout) btnNavLogout.classList.add('hidden');
     if (btnBannerLogout) btnBannerLogout.classList.add('hidden');
-
-    // Tombol admin tetap bisa diklik untuk meminta password admin
-    if (btnAdminPanel) {
-      btnAdminPanel.classList.remove('hidden');
-      if (navAdminBtnText) navAdminBtnText.textContent = '👑 Akses Admin';
-    }
-    if (btnBannerAdminPanel) {
-      btnBannerAdminPanel.classList.remove('hidden');
-      if (bannerAdminBtnText) bannerAdminBtnText.textContent = '👑 Buka Akses Admin';
-    }
+    if (btnAdminPanel) btnAdminPanel.classList.add('hidden');
+    if (btnBannerAdminPanel) btnBannerAdminPanel.classList.add('hidden');
+    if (btnMenuAdminPanel) btnMenuAdminPanel.classList.add('hidden');
 
     // Kunci / blur tampilan daftar link & statistik agar wajib buat akun dulu
     if (mainAppContent) mainAppContent.classList.add('auth-gated-blur');
     return;
   }
 
-  // Pengguna sudah login -> buka blur tampilan link & statistik
+  // Pengguna aktif (baik anggota, demo, maupun admin) -> buka blur tampilan link & statistik
   if (mainAppContent) mainAppContent.classList.remove('auth-gated-blur');
 
   // Tampilkan tombol logout di navbar dan banner
@@ -1963,24 +2005,60 @@ function updateUserUI() {
   if (btnBannerLogout) btnBannerLogout.classList.remove('hidden');
 
   const isAdm = isAdminUser(user);
+  const isDemo = user.username === 'demo';
 
-  const initials = user.fullName
+  const initials = isDemo ? '👁️' : (user.fullName
     ? user.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-    : user.username[0].toUpperCase();
+    : user.username[0].toUpperCase());
 
   if (userAvatar) userAvatar.textContent = initials;
-  if (navUserName) navUserName.textContent = user.fullName ? user.fullName.split(' ')[0] : user.username;
-  if (navUserRole) navUserRole.textContent = isAdm ? 'Admin SPPG' : (user.role || 'Member');
-  if (menuUserFullName) menuUserFullName.textContent = user.fullName || user.username;
-  if (menuUsername) menuUsername.textContent = '@' + user.username;
-  if (menuScopeBadge) {
-    menuScopeBadge.textContent = isAdm ? '👑 Administrator (Akses Penuh)' : '🔒 Ruang Link Pribadi';
+  if (navUserName) {
+    navUserName.textContent = isDemo ? 'Mode Demo' : (user.fullName ? user.fullName.split(' ')[0] : user.username);
   }
-  if (scopeUserFullName) scopeUserFullName.textContent = user.fullName || user.username;
-  if (scopeUsername) scopeUsername.textContent = '@' + user.username;
+  if (navUserRole) {
+    navUserRole.textContent = isAdm ? 'Admin SPPG' : (isDemo ? 'Tamu Demo' : (user.role || 'Member'));
+  }
+  if (menuUserFullName) {
+    menuUserFullName.textContent = isDemo ? 'Mode Demo (Tamu SPPG)' : (user.fullName || user.username);
+  }
+  if (menuUsername) {
+    menuUsername.textContent = '@' + user.username;
+  }
+  if (menuScopeBadge) {
+    if (isAdm) {
+      menuScopeBadge.textContent = '👑 Administrator (Akses Penuh)';
+    } else if (isDemo) {
+      menuScopeBadge.textContent = '👁️ Eksplorasi Mode Demo';
+    } else {
+      menuScopeBadge.textContent = '🔒 Ruang Link Pribadi';
+    }
+  }
+  if (scopeUserFullName) {
+    scopeUserFullName.textContent = isDemo ? 'Pengunjung Mode Demo (Tamu SPPG)' : (user.fullName || user.username);
+  }
+  if (scopeUsername) {
+    scopeUsername.textContent = '@' + user.username;
+  }
+
+  const scopeUserFullNameClickable = document.getElementById('scopeUserFullNameClickable');
+  if (scopeUserFullNameClickable) {
+    if (isAdm) {
+      scopeUserFullNameClickable.style.cursor = 'pointer';
+      scopeUserFullNameClickable.title = '👑 Administrator SPPG (Klik untuk Kelola Akun)';
+    } else {
+      scopeUserFullNameClickable.style.cursor = 'default';
+      scopeUserFullNameClickable.title = isDemo ? 'Mode Eksplorasi Demo' : 'Ruang Link Pribadi Anda';
+    }
+  }
 
   if (scopeBadgeText) {
-    scopeBadgeText.textContent = isAdm ? '👑 Ruang Administrator' : 'Ruang Akun Pribadi';
+    if (isAdm) {
+      scopeBadgeText.textContent = '👑 Ruang Administrator';
+    } else if (isDemo) {
+      scopeBadgeText.textContent = '👁️ Mode Demo (Tamu)';
+    } else {
+      scopeBadgeText.textContent = 'Ruang Akun Pribadi';
+    }
   }
 
   if (scopeAdminBadge) {
@@ -1988,7 +2066,7 @@ function updateUserUI() {
     else scopeAdminBadge.classList.add('hidden');
   }
 
-  // Toolbar Akses Penuh Admin (Lihat semua link / filter per user)
+  // Toolbar Akses Penuh Admin (Lihat semua link / filter per user) - HANYA ADMIN
   if (adminAccessToolbar) {
     if (isAdm) {
       adminAccessToolbar.classList.remove('hidden');
@@ -1998,24 +2076,32 @@ function updateUserUI() {
     }
   }
 
-  // Tombol Admin di navbar
+  // Tombol & Menu Admin: HANYA DITAMPILKAN JIKA YANG LOGIN ADALAH ADMIN!
+  // Jika akun biasa/anggota atau Demo, sembunyikan total agar tidak bisa mengakses admin!
   if (btnAdminPanel) {
-    btnAdminPanel.classList.remove('hidden');
-    if (navAdminBtnText) {
-      navAdminBtnText.textContent = isAdm ? '👑 Kelola Akun (Admin)' : '👑 Akses Admin';
+    if (isAdm) {
+      btnAdminPanel.classList.remove('hidden');
+      if (navAdminBtnText) navAdminBtnText.textContent = '👑 Kelola Akun Admin';
+    } else {
+      btnAdminPanel.classList.add('hidden');
     }
   }
 
-  // Tombol Admin di banner
   if (btnBannerAdminPanel) {
-    btnBannerAdminPanel.classList.remove('hidden');
-    if (bannerAdminBtnText) {
-      bannerAdminBtnText.textContent = isAdm ? '👑 Kelola Semua Akun & Sandi' : '👑 Buka Akses Admin';
+    if (isAdm) {
+      btnBannerAdminPanel.classList.remove('hidden');
+      if (bannerAdminBtnText) bannerAdminBtnText.textContent = '👑 Kelola Akun Admin';
+    } else {
+      btnBannerAdminPanel.classList.add('hidden');
     }
   }
 
   if (btnMenuAdminPanel) {
-    btnMenuAdminPanel.classList.remove('hidden');
+    if (isAdm) {
+      btnMenuAdminPanel.classList.remove('hidden');
+    } else {
+      btnMenuAdminPanel.classList.add('hidden');
+    }
   }
 }
 
@@ -2065,7 +2151,7 @@ function openAuthModal(defaultTab = 'login', isMandatory = false) {
 
 function closeAuthModal() {
   if (!state.currentUser) {
-    showToast('Harap buat akun Anda dulu atau masuk terlebih dahulu untuk menggunakan aplikasi.', 'warning');
+    showToast('Harap buat akun baru, masuk ke akun Anda, atau pilih Mode Demo untuk mencoba aplikasi.', 'warning');
     return;
   }
   const modal = document.getElementById('authModal');
@@ -2130,7 +2216,7 @@ function handleLoginSubmit(e) {
             showToast('Password yang Anda masukkan salah.', 'error');
             document.getElementById('loginPassword').focus();
           } else {
-            switchUserAccount(remoteAcc);
+            switchUserAccount(remoteAcc, true);
             closeAuthModal();
             showToast(`Selamat datang kembali, ${remoteAcc.fullName}!`, 'success');
             document.getElementById('loginUsername').value = '';
@@ -2162,7 +2248,7 @@ function handleLoginSubmit(e) {
   }
 
   // Login Berhasil
-  switchUserAccount(found);
+  switchUserAccount(found, true);
   closeAuthModal();
   showToast(`Selamat datang kembali, ${found.fullName}!`, 'success');
   document.getElementById('loginUsername').value = '';
@@ -2225,7 +2311,7 @@ function handleRegisterSubmit(e) {
   }
 
   // Otomatis login ke akun baru
-  switchUserAccount(newAccount);
+  switchUserAccount(newAccount, true);
   closeAuthModal();
   showToast(`Selamat datang, ${fullName}! Akun @${username} berhasil dibuat. Ruang link pribadi Anda telah siap.`, 'success');
 
@@ -2234,7 +2320,18 @@ function handleRegisterSubmit(e) {
   document.getElementById('regPassword').value = '';
 }
 
-function switchUserAccount(user) {
+function switchUserAccount(user, isPreAuthenticated = false) {
+  // Cegah pengalihan tak berizin ke Administrator tanpa kata sandi
+  if (!isPreAuthenticated && user && user.username && user.username.toLowerCase() === 'admin' && (!state.currentUser || state.currentUser.username.toLowerCase() !== 'admin')) {
+    switchAuthTab('login');
+    const uInput = document.getElementById('loginUsername');
+    if (uInput) uInput.value = 'admin';
+    const pInput = document.getElementById('loginPassword');
+    if (pInput) pInput.focus();
+    showToast('Akun Administrator wajib memasukkan password.', 'warning');
+    return;
+  }
+
   state.currentUser = user;
   localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
   updateUserUI();
@@ -2249,13 +2346,29 @@ function switchUserAccount(user) {
   }
 }
 
+// Mode Demo (Tamu): Akses eksplorasi untuk pengunjung yang belum memiliki akun
+function enterDemoMode() {
+  state.currentUser = DEMO_ACCOUNT;
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(DEMO_ACCOUNT));
+  updateUserUI();
+  loadLinks();
+  renderApp();
+  closeAuthModal();
+  showToast('Selamat datang! Anda masuk dalam Mode Demo (Tamu). Anda dapat melihat dan mencoba fitur link SPPG.', 'info');
+}
+window.enterDemoMode = enterDemoMode;
+
 function handleLogout() {
   const userMenu = document.getElementById('userMenu');
   if (userMenu) userMenu.classList.remove('show');
 
+  const isDemo = state.currentUser && state.currentUser.username === 'demo';
   const currentName = state.currentUser ? state.currentUser.fullName : 'akun Anda';
-  const confirmed = confirm(`Apakah Anda yakin ingin keluar dari akun ${currentName}?`);
-  if (!confirmed) return;
+
+  if (!isDemo) {
+    const confirmed = confirm(`Apakah Anda yakin ingin keluar dari akun ${currentName}?`);
+    if (!confirmed) return;
+  }
 
   state.currentUser = null;
   localStorage.removeItem(SESSION_STORAGE_KEY);
@@ -2264,7 +2377,11 @@ function handleLogout() {
   updateUserUI();
 
   openAuthModal('register', true);
-  showToast('Anda telah keluar. Silakan buat akun baru atau masuk ke akun Anda.', 'info');
+  if (isDemo) {
+    showToast('Keluar dari Mode Demo. Silakan buat akun baru untuk memiliki ruang link pribadi atau masuk jika sudah punya.', 'info');
+  } else {
+    showToast('Anda telah keluar. Silakan buat akun baru atau masuk ke akun Anda.', 'info');
+  }
 }
 
 function handleAdminModalLogout() {
@@ -2290,32 +2407,57 @@ function renderQuickAccountsList() {
   const accounts = getRegisteredAccounts();
   const currentUsername = state.currentUser ? state.currentUser.username : '';
 
-  let html = '';
-  accounts.forEach(acc => {
-    const isCurrent = currentUsername && acc.username.toLowerCase() === currentUsername.toLowerCase();
-    const isAdm = isAdminUser(acc);
-    const initials = acc.fullName
-      ? acc.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-      : acc.username[0].toUpperCase();
-
-    html += `
-      <div class="quick-account-item ${isCurrent ? 'is-current' : ''}" data-username="${escapeHtml(acc.username)}" style="cursor: pointer;">
-        <div class="quick-acc-left">
-          <div class="quick-acc-avatar" style="${isAdm ? 'background: #10b981;' : ''}">${initials}</div>
-          <div class="quick-acc-names">
-            <span class="quick-acc-name">${escapeHtml(acc.fullName)} ${isAdm ? '👑' : ''}</span>
-            <span class="quick-acc-username">@${escapeHtml(acc.username)}</span>
-          </div>
-        </div>
-        <span class="quick-acc-action">${isCurrent ? '● Sedang Aktif' : 'Beralih ke Akun Ini ➜'}</span>
-      </div>
-    `;
+  // KEAMANAN TINGKAT TINGGI:
+  // Akun Administrator DILARANG KERAS tampil di daftar beralih akun 1-klik di perangkat ini!
+  // Administrator harus login manual dengan username 'admin' & password pada tab 'Masuk'.
+  // Pengunjung yang belum punya akun diarahkan masuk ke Mode Demo dulu.
+  const memberAccounts = accounts.filter(acc => {
+    const u = (acc.username || '').toLowerCase();
+    return u !== 'admin' && u !== 'demo' && !isAdminUser(acc);
   });
 
+  let html = '';
+
+  if (memberAccounts.length === 0) {
+    html += `
+      <div class="quick-acc-empty" style="text-align: center; padding: 1.1rem 0.85rem; background: var(--bg-hover, rgba(0,0,0,0.02)); border: 1px dashed var(--border-color); border-radius: 8px; color: var(--text-muted); font-size: 0.83rem; margin-bottom: 0.8rem;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.35rem;">👤</div>
+        <div style="font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">Belum Ada Akun Anggota di Perangkat Ini</div>
+        <div>Jika Anda belum punya akun, Anda dapat masuk ke <strong>Mode Demo</strong> terlebih dahulu atau buat akun baru di atas.</div>
+      </div>
+    `;
+  } else {
+    memberAccounts.forEach(acc => {
+      const isCurrent = currentUsername && acc.username.toLowerCase() === currentUsername.toLowerCase();
+      const initials = acc.fullName
+        ? acc.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+        : acc.username[0].toUpperCase();
+
+      html += `
+        <div class="quick-account-item ${isCurrent ? 'is-current' : ''}" data-username="${escapeHtml(acc.username)}" style="cursor: pointer;">
+          <div class="quick-acc-left">
+            <div class="quick-acc-avatar">${initials}</div>
+            <div class="quick-acc-names">
+              <span class="quick-acc-name">${escapeHtml(acc.fullName)}</span>
+              <span class="quick-acc-username">@${escapeHtml(acc.username)}</span>
+            </div>
+          </div>
+          <span class="quick-acc-action">${isCurrent ? '● Sedang Aktif' : 'Beralih ke Akun Ini ➜'}</span>
+        </div>
+      `;
+    });
+  }
+
+  // Tombol Coba Mode Demo Dulu & Tambah Akun Baru
   html += `
-    <button type="button" class="btn btn-secondary btn-block btn-sm" style="margin-top: 0.75rem;" onclick="switchAuthTab('register')">
-      ➕ Tambah / Buat Akun Baru
-    </button>
+    <div style="display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.75rem;">
+      <button type="button" class="btn btn-secondary btn-block btn-sm" id="btnQuickDemoMode" onclick="enterDemoMode()" style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); color: var(--brand-blue); font-weight: 600; padding: 0.6rem; border-radius: 8px; cursor: pointer;">
+        👁️ Coba Mode Demo Dulu (Tanpa Akun)
+      </button>
+      <button type="button" class="btn btn-secondary btn-block btn-sm" onclick="switchAuthTab('register')" style="border-radius: 8px;">
+        ➕ Tambah / Buat Akun Baru
+      </button>
+    </div>
   `;
 
   container.innerHTML = html;
@@ -2323,7 +2465,7 @@ function renderQuickAccountsList() {
   container.querySelectorAll('.quick-account-item').forEach(item => {
     item.addEventListener('click', () => {
       const username = item.getAttribute('data-username');
-      const targetUser = accounts.find(a => a.username === username);
+      const targetUser = memberAccounts.find(a => a.username === username);
       if (targetUser) {
         if (currentUsername && targetUser.username.toLowerCase() === currentUsername.toLowerCase()) {
           showToast(`Akun @${targetUser.username} (${targetUser.fullName}) sedang aktif digunakan.`, 'info');
@@ -2345,7 +2487,7 @@ function openAdminModal() {
   if (userMenu) userMenu.classList.remove('show');
 
   if (!isAdminUser()) {
-    openAdminPasswordModal();
+    showToast('Akses ditolak: Hanya Administrator SPPG yang memiliki akses ke panel ini.', 'error');
     return;
   }
   const modal = document.getElementById('adminModal');
@@ -2624,7 +2766,7 @@ function handleAdminClick() {
   if (isAdminUser()) {
     openAdminModal();
   } else {
-    openAdminPasswordModal();
+    showToast('Akses ditolak: Menu ini hanya untuk akun Administrator SPPG.', 'error');
   }
 }
 
@@ -2669,7 +2811,7 @@ function handleAdminPasswordSubmit(e) {
 
   if (pass === adminAcc.password) {
     closeAdminPasswordModal();
-    switchUserAccount(adminAcc);
+    switchUserAccount(adminAcc, true);
     showToast('👑 Password Benar! Anda sekarang memiliki SEMUA AKSES Administrator.', 'success');
     openAdminModal();
   } else {

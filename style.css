@@ -1839,6 +1839,18 @@ button, input, select, textarea {
   color: var(--brand-blue);
 }
 
+.quick-acc-empty {
+  text-align: center;
+  padding: 1.15rem 0.85rem;
+  background: var(--bg-hover);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.83rem;
+  margin-bottom: 0.8rem;
+  line-height: 1.45;
+}
+
 /* ===================================================================
    ADMIN MANAGEMENT PANEL STYLES
    =================================================================== */
