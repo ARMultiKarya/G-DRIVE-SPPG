@@ -102,7 +102,8 @@ let state = {
   cloudStatus: 'offline', // 'offline' | 'connecting' | 'online'
   firebaseDb: null,
   firebaseConfig: null,
-  firebaseUserLinksRef: null
+  firebaseUserLinksRef: null,
+  adminViewScope: '__all__' // '__all__' | 'admin' | specific username
 };
 
 // SVG Icon Definitions
@@ -210,29 +211,89 @@ document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
   renderApp();
   initFirebaseSync();
+
+  // Jika belum ada akun aktif (kunjungan pertama kali ke link), wajib buat akun Anda dulu atau masuk!
+  if (!state.currentUser) {
+    openAuthModal('register', true);
+  }
 });
 
-// Load stored links for CURRENT LOGGED IN USER only
+// Load stored links (Admin can view all users' links or specific user; members only view their own)
 function loadLinks() {
-  const username = state.currentUser ? state.currentUser.username : 'admin';
-  const userStorageKey = getUserLinksStorageKey(username);
+  if (!state.currentUser) {
+    state.links = [];
+    return;
+  }
+
+  const isAdm = isAdminUser(state.currentUser);
+
+  // Jika Administrator & mode Akses Semua Link aktif
+  if (isAdm && state.adminViewScope === '__all__') {
+    const allAccounts = getRegisteredAccounts();
+    let combinedLinks = [];
+    allAccounts.forEach(acc => {
+      const uKey = getUserLinksStorageKey(acc.username);
+      try {
+        const raw = localStorage.getItem(uKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(item => {
+              combinedLinks.push({
+                ...item,
+                ownerUsername: acc.username,
+                ownerFullName: acc.fullName
+              });
+            });
+          }
+        } else if (acc.username.toLowerCase() === 'admin') {
+          DEFAULT_LINKS.forEach(item => {
+            combinedLinks.push({
+              ...item,
+              ownerUsername: 'admin',
+              ownerFullName: 'Administrator SPPG'
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('Error reading links for', acc.username, e);
+      }
+    });
+    state.links = combinedLinks;
+    return;
+  }
+
+  // Jika admin memilih akun tertentu, atau pengguna biasa
+  const targetUsername = (isAdm && state.adminViewScope && state.adminViewScope !== '__all__')
+    ? state.adminViewScope
+    : state.currentUser.username;
+
+  const userStorageKey = getUserLinksStorageKey(targetUsername);
 
   try {
     const rawData = localStorage.getItem(userStorageKey);
     if (rawData) {
       const parsed = JSON.parse(rawData);
       if (Array.isArray(parsed)) {
-        state.links = parsed;
+        state.links = parsed.map(item => ({
+          ...item,
+          ownerUsername: targetUsername,
+          ownerFullName: targetUsername === 'admin' ? 'Administrator SPPG' : targetUsername
+        }));
         return;
       }
     }
   } catch (err) {
-    console.error('Error loading stored links for user:', username, err);
+    console.error('Error loading stored links for user:', targetUsername, err);
   }
 
   // Jika akun admin pertama kali buka, berikan contoh bawaan SPPG
-  if (username === 'admin') {
-    state.links = [...DEFAULT_LINKS];
+  if (targetUsername === 'admin') {
+    state.links = DEFAULT_LINKS.map(item => ({
+      ...item,
+      ownerUsername: 'admin',
+      ownerFullName: 'Administrator SPPG'
+    }));
     saveToStorage();
   } else {
     // Akun pengguna baru dimulai dengan daftar bersih miliknya sendiri
@@ -243,13 +304,37 @@ function loadLinks() {
 
 function saveToStorage() {
   if (!state.currentUser) return;
-  const username = state.currentUser.username;
-  const userStorageKey = getUserLinksStorageKey(username);
+  const isAdm = isAdminUser(state.currentUser);
+
+  if (isAdm && state.adminViewScope === '__all__') {
+    const grouped = {};
+    state.links.forEach(link => {
+      const owner = link.ownerUsername || 'admin';
+      if (!grouped[owner]) grouped[owner] = [];
+      grouped[owner].push(link);
+    });
+
+    Object.keys(grouped).forEach(uName => {
+      const uKey = getUserLinksStorageKey(uName);
+      try {
+        localStorage.setItem(uKey, JSON.stringify(grouped[uName]));
+      } catch (err) {
+        console.error('Save error for', uName, err);
+      }
+    });
+    return;
+  }
+
+  const targetUsername = (isAdm && state.adminViewScope && state.adminViewScope !== '__all__')
+    ? state.adminViewScope
+    : state.currentUser.username;
+
+  const userStorageKey = getUserLinksStorageKey(targetUsername);
 
   try {
     localStorage.setItem(userStorageKey, JSON.stringify(state.links));
   } catch (err) {
-    console.error('Error saving links to localStorage for user:', username, err);
+    console.error('Error saving links to localStorage for user:', targetUsername, err);
     showToast('Gagal menyimpan ke penyimpanan lokal browser', 'error');
   }
 }
@@ -265,37 +350,166 @@ function initEventListeners() {
   // Backup / Restore Menu Toggle
   const btnBackup = document.getElementById('btnBackup');
   const dataMenu = document.getElementById('dataMenu');
-  btnBackup.addEventListener('click', (e) => {
-    e.stopPropagation();
-    dataMenu.classList.toggle('show');
-    userMenu.classList.remove('show');
-  });
+  if (btnBackup) {
+    btnBackup.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dataMenu.classList.toggle('show');
+      if (userMenu) userMenu.classList.remove('show');
+    });
+  }
 
   // User Profile Menu Toggle
   const btnUserAccount = document.getElementById('btnUserAccount');
   const userMenu = document.getElementById('userMenu');
-  btnUserAccount.addEventListener('click', (e) => {
-    e.stopPropagation();
-    userMenu.classList.toggle('show');
-    dataMenu.classList.remove('show');
-  });
+  if (btnUserAccount) {
+    btnUserAccount.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleUserMenu(e);
+    });
+  }
+
+  // Prevent dropdown menu click from bubbling to document (closing menu prematurely)
+  if (userMenu) {
+    userMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
+  if (dataMenu) {
+    dataMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+  }
 
   document.addEventListener('click', () => {
-    dataMenu.classList.remove('show');
-    userMenu.classList.remove('show');
+    if (dataMenu) dataMenu.classList.remove('show');
+    if (userMenu) userMenu.classList.remove('show');
   });
 
   // Auth & Account Modal Triggers
-  document.getElementById('btnOpenAuthModal').addEventListener('click', () => {
-    userMenu.classList.remove('show');
-    openAuthModal('login');
-  });
-  document.getElementById('btnBannerSwitchAccount').addEventListener('click', () => openAuthModal('login'));
-  document.getElementById('btnLogout').addEventListener('click', () => {
-    userMenu.classList.remove('show');
-    handleLogout();
-  });
-  document.getElementById('btnCloseAuthModal').addEventListener('click', closeAuthModal);
+  const btnOpenAuthModal = document.getElementById('btnOpenAuthModal');
+  if (btnOpenAuthModal) {
+    btnOpenAuthModal.addEventListener('click', () => {
+      if (userMenu) userMenu.classList.remove('show');
+      openAuthModal('login');
+    });
+  }
+
+  const btnBannerSwitchAccount = document.getElementById('btnBannerSwitchAccount');
+  if (btnBannerSwitchAccount) {
+    btnBannerSwitchAccount.addEventListener('click', () => openAuthModal('login'));
+  }
+
+  const btnBannerCreateAccount = document.getElementById('btnBannerCreateAccount');
+  if (btnBannerCreateAccount) {
+    btnBannerCreateAccount.addEventListener('click', () => openAuthModal('register'));
+  }
+
+  const btnOpenRegisterModal = document.getElementById('btnOpenRegisterModal');
+  if (btnOpenRegisterModal) {
+    btnOpenRegisterModal.addEventListener('click', () => {
+      if (userMenu) userMenu.classList.remove('show');
+      openAuthModal('register');
+    });
+  }
+
+  // LOGOUT BUTTONS (Navbar, Banner, Dropdown, Admin Modal)
+  const btnNavLogout = document.getElementById('btnNavLogout');
+  if (btnNavLogout) {
+    btnNavLogout.addEventListener('click', handleLogout);
+  }
+
+  const btnBannerLogout = document.getElementById('btnBannerLogout');
+  if (btnBannerLogout) {
+    btnBannerLogout.addEventListener('click', handleLogout);
+  }
+
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+      if (userMenu) userMenu.classList.remove('show');
+      handleLogout();
+    });
+  }
+
+  const btnAdminModalLogout = document.getElementById('btnAdminModalLogout');
+  if (btnAdminModalLogout) {
+    btnAdminModalLogout.addEventListener('click', handleAdminModalLogout);
+  }
+
+  const btnCloseAuthModal = document.getElementById('btnCloseAuthModal');
+  if (btnCloseAuthModal) {
+    btnCloseAuthModal.addEventListener('click', closeAuthModal);
+  }
+
+  // Switch tabs inside Auth Modal
+  const btnSwitchToRegister = document.getElementById('btnSwitchToRegister');
+  if (btnSwitchToRegister) {
+    btnSwitchToRegister.addEventListener('click', () => switchAuthTab('register'));
+  }
+
+  const btnSwitchToLogin = document.getElementById('btnSwitchToLogin');
+  if (btnSwitchToLogin) {
+    btnSwitchToLogin.addEventListener('click', () => switchAuthTab('login'));
+  }
+
+  const btnAuthOpenAdminPass = document.getElementById('btnAuthOpenAdminPass');
+  if (btnAuthOpenAdminPass) {
+    btnAuthOpenAdminPass.addEventListener('click', () => {
+      openAdminPasswordModal();
+    });
+  }
+
+  // Admin Modal & Trigger Event Listeners
+  const btnCloseAdminModal = document.getElementById('btnCloseAdminModal');
+  if (btnCloseAdminModal) btnCloseAdminModal.addEventListener('click', closeAdminModal);
+
+  const btnAdminPanel = document.getElementById('btnAdminPanel');
+  if (btnAdminPanel) btnAdminPanel.addEventListener('click', handleAdminClick);
+
+  const btnMenuAdminPanel = document.getElementById('btnMenuAdminPanel');
+  if (btnMenuAdminPanel) {
+    btnMenuAdminPanel.addEventListener('click', () => {
+      if (userMenu) userMenu.classList.remove('show');
+      handleAdminClick();
+    });
+  }
+
+  const btnBannerAdminPanel = document.getElementById('btnBannerAdminPanel');
+  if (btnBannerAdminPanel) btnBannerAdminPanel.addEventListener('click', handleAdminClick);
+
+  const scopeUserFullNameClickable = document.getElementById('scopeUserFullNameClickable');
+  if (scopeUserFullNameClickable) scopeUserFullNameClickable.addEventListener('click', handleAdminClick);
+
+  const btnScopeBadge = document.getElementById('btnScopeBadge');
+  if (btnScopeBadge) btnScopeBadge.addEventListener('click', handleAdminClick);
+
+  const scopeAdminBadge = document.getElementById('scopeAdminBadge');
+  if (scopeAdminBadge) scopeAdminBadge.addEventListener('click', handleAdminClick);
+
+  const btnToolbarManageAccounts = document.getElementById('btnToolbarManageAccounts');
+  if (btnToolbarManageAccounts) btnToolbarManageAccounts.addEventListener('click', openAdminModal);
+
+  // Admin Password Modal Listeners
+  const adminPasswordForm = document.getElementById('adminPasswordForm');
+  if (adminPasswordForm) adminPasswordForm.addEventListener('submit', handleAdminPasswordSubmit);
+
+  const btnCloseAdminPassModal = document.getElementById('btnCloseAdminPassModal');
+  if (btnCloseAdminPassModal) btnCloseAdminPassModal.addEventListener('click', closeAdminPasswordModal);
+
+  const btnCancelAdminPassModal = document.getElementById('btnCancelAdminPassModal');
+  if (btnCancelAdminPassModal) btnCancelAdminPassModal.addEventListener('click', closeAdminPasswordModal);
+
+  const btnToggleAdminPass = document.getElementById('btnToggleAdminPass');
+  if (btnToggleAdminPass) {
+    btnToggleAdminPass.addEventListener('click', function() {
+      toggleInputPasswordVisibility('adminInputPassword', this);
+    });
+  }
+
+  const adminSearchUsers = document.getElementById('adminSearchUsers');
+  if (adminSearchUsers) {
+    adminSearchUsers.addEventListener('input', renderAdminUsersTable);
+  }
 
   // Auth Form Tabs
   document.getElementById('tabAuthLogin').addEventListener('click', () => switchAuthTab('login'));
@@ -415,7 +629,12 @@ function initEventListeners() {
       closeModal();
       closeQrModal();
       closeDeleteModal();
-      dataMenu.classList.remove('show');
+      closeCloudModal();
+      if (state.currentUser) closeAuthModal();
+      closeAdminModal();
+      closeAdminPasswordModal();
+      if (dataMenu) dataMenu.classList.remove('show');
+      if (userMenu) userMenu.classList.remove('show');
     }
 
     // Ctrl+K or '/' to focus search (when not in an input/textarea)
@@ -457,6 +676,18 @@ function initEventListeners() {
   document.getElementById('authModal').addEventListener('click', (e) => {
     if (e.target.id === 'authModal') closeAuthModal();
   });
+  const adminModal = document.getElementById('adminModal');
+  if (adminModal) {
+    adminModal.addEventListener('click', (e) => {
+      if (e.target.id === 'adminModal') closeAdminModal();
+    });
+  }
+  const adminPassModal = document.getElementById('adminPasswordModal');
+  if (adminPassModal) {
+    adminPassModal.addEventListener('click', (e) => {
+      if (e.target.id === 'adminPasswordModal') closeAdminPasswordModal();
+    });
+  }
 }
 
 // ===================================================================
@@ -709,6 +940,9 @@ function renderLinkCard(link) {
   const isFavorite = !!link.favorite;
   const category = link.category || 'Umum';
   const clicks = link.clicks || 0;
+  const ownerBadge = (isAdminUser() && link.ownerUsername)
+    ? `<span class="badge-owner" title="Pemilik Link">👤 @${escapeHtml(link.ownerUsername)}</span>`
+    : '';
 
   return `
     <article class="link-card ${isFavorite ? 'is-favorite' : ''}" style="--card-accent: ${accentColor};" data-card-id="${link.id}">
@@ -719,6 +953,7 @@ function renderLinkCard(link) {
           ${typeIcon}
           <span>${typeName}</span>
         </span>
+        ${ownerBadge}
 
         <div class="card-top-actions">
           <button 
@@ -905,6 +1140,12 @@ function toggleFavorite(id) {
 // MODAL: TAMBAH & EDIT LINK
 // ===================================================================
 function openAddModal() {
+  if (!state.currentUser) {
+    showToast('Harap buat akun Anda dulu atau masuk terlebih dahulu untuk menambah link', 'warning');
+    openAuthModal('register', true);
+    return;
+  }
+
   const modal = document.getElementById('linkModal');
   const form = document.getElementById('linkForm');
   form.reset();
@@ -922,6 +1163,12 @@ function openAddModal() {
 }
 
 function openEditModal(id) {
+  if (!state.currentUser) {
+    showToast('Harap masuk terlebih dahulu untuk mengedit link', 'warning');
+    openAuthModal('login', true);
+    return;
+  }
+
   const item = state.links.find(l => l.id === id);
   if (!item) return;
 
@@ -1587,6 +1834,7 @@ function fetchLinksFromCloud() {
 }
 
 // ===================================================================
+// ===================================================================
 // MULTI-ACCOUNT AUTHENTICATION & USER MANAGEMENT
 // ===================================================================
 const DEFAULT_ACCOUNTS = [
@@ -1595,10 +1843,17 @@ const DEFAULT_ACCOUNTS = [
     username: 'admin',
     fullName: 'Administrator SPPG',
     password: 'admin',
-    role: 'SPPG Admin',
+    role: 'admin',
     createdAt: new Date().toISOString()
   }
 ];
+
+function isAdminUser(user = state.currentUser) {
+  if (!user) return false;
+  const username = (user.username || '').toLowerCase();
+  const role = (user.role || '').toLowerCase();
+  return username === 'admin' || role === 'admin' || role === 'sppg admin';
+}
 
 function getRegisteredAccounts() {
   try {
@@ -1638,42 +1893,157 @@ function initUserSession() {
     const matched = accounts.find(a => a.username.toLowerCase() === session.username.toLowerCase());
     state.currentUser = matched || session;
   } else {
-    // Default session: akun pertama (admin)
-    state.currentUser = accounts[0];
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state.currentUser));
+    // Pengguna belum login atau baru pertama kali membuka link!
+    state.currentUser = null;
   }
 
   updateUserUI();
 }
 
 function updateUserUI() {
-  if (!state.currentUser) return;
   const user = state.currentUser;
 
-  // Inisial avatar (misal 'A' atau 'BS')
+  const mainAppContent = document.getElementById('mainAppContent');
+  const userAvatar = document.getElementById('userAvatar');
+  const navUserName = document.getElementById('navUserName');
+  const navUserRole = document.getElementById('navUserRole');
+  const btnNavLogout = document.getElementById('btnNavLogout');
+  const btnBannerLogout = document.getElementById('btnBannerLogout');
+  const menuUserFullName = document.getElementById('menuUserFullName');
+  const menuUsername = document.getElementById('menuUsername');
+  const menuScopeBadge = document.getElementById('menuScopeBadge');
+  const scopeUserFullName = document.getElementById('scopeUserFullName');
+  const scopeUsername = document.getElementById('scopeUsername');
+  const scopeBadgeText = document.getElementById('scopeBadgeText');
+  const scopeAdminBadge = document.getElementById('scopeAdminBadge');
+  const btnAdminPanel = document.getElementById('btnAdminPanel');
+  const navAdminBtnText = document.getElementById('navAdminBtnText');
+  const btnMenuAdminPanel = document.getElementById('btnMenuAdminPanel');
+  const btnBannerAdminPanel = document.getElementById('btnBannerAdminPanel');
+  const bannerAdminBtnText = document.getElementById('bannerAdminBtnText');
+  const adminAccessToolbar = document.getElementById('adminAccessToolbar');
+
+  if (!user) {
+    if (userAvatar) userAvatar.textContent = '?';
+    if (navUserName) navUserName.textContent = 'Belum Masuk';
+    if (navUserRole) navUserRole.textContent = 'Wajib Buat Akun';
+    if (menuUserFullName) menuUserFullName.textContent = 'Pengunjung';
+    if (menuUsername) menuUsername.textContent = '@tamu';
+    if (menuScopeBadge) menuScopeBadge.textContent = '🔒 Wajib Buat Akun Dulu';
+    if (scopeUserFullName) scopeUserFullName.textContent = 'Wajib Buat Akun Terlebih Dahulu';
+    if (scopeUsername) scopeUsername.textContent = '@belum_masuk';
+    if (scopeBadgeText) scopeBadgeText.textContent = '🔒 Akses Terkunci';
+    if (scopeAdminBadge) scopeAdminBadge.classList.add('hidden');
+    if (adminAccessToolbar) adminAccessToolbar.classList.add('hidden');
+
+    // Sembunyikan tombol logout saat belum login
+    if (btnNavLogout) btnNavLogout.classList.add('hidden');
+    if (btnBannerLogout) btnBannerLogout.classList.add('hidden');
+
+    // Tombol admin tetap bisa diklik untuk meminta password admin
+    if (btnAdminPanel) {
+      btnAdminPanel.classList.remove('hidden');
+      if (navAdminBtnText) navAdminBtnText.textContent = '👑 Akses Admin';
+    }
+    if (btnBannerAdminPanel) {
+      btnBannerAdminPanel.classList.remove('hidden');
+      if (bannerAdminBtnText) bannerAdminBtnText.textContent = '👑 Buka Akses Admin';
+    }
+
+    // Kunci / blur tampilan daftar link & statistik agar wajib buat akun dulu
+    if (mainAppContent) mainAppContent.classList.add('auth-gated-blur');
+    return;
+  }
+
+  // Pengguna sudah login -> buka blur tampilan link & statistik
+  if (mainAppContent) mainAppContent.classList.remove('auth-gated-blur');
+
+  // Tampilkan tombol logout di navbar dan banner
+  if (btnNavLogout) btnNavLogout.classList.remove('hidden');
+  if (btnBannerLogout) btnBannerLogout.classList.remove('hidden');
+
+  const isAdm = isAdminUser(user);
+
   const initials = user.fullName
     ? user.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
     : user.username[0].toUpperCase();
 
-  const userAvatar = document.getElementById('userAvatar');
-  const navUserName = document.getElementById('navUserName');
-  const navUserRole = document.getElementById('navUserRole');
-  const menuUserFullName = document.getElementById('menuUserFullName');
-  const menuUsername = document.getElementById('menuUsername');
-  const scopeUserFullName = document.getElementById('scopeUserFullName');
-  const scopeUsername = document.getElementById('scopeUsername');
-
   if (userAvatar) userAvatar.textContent = initials;
   if (navUserName) navUserName.textContent = user.fullName ? user.fullName.split(' ')[0] : user.username;
-  if (navUserRole) navUserRole.textContent = user.role || 'SPPG User';
+  if (navUserRole) navUserRole.textContent = isAdm ? 'Admin SPPG' : (user.role || 'Member');
   if (menuUserFullName) menuUserFullName.textContent = user.fullName || user.username;
   if (menuUsername) menuUsername.textContent = '@' + user.username;
+  if (menuScopeBadge) {
+    menuScopeBadge.textContent = isAdm ? '👑 Administrator (Akses Penuh)' : '🔒 Ruang Link Pribadi';
+  }
   if (scopeUserFullName) scopeUserFullName.textContent = user.fullName || user.username;
   if (scopeUsername) scopeUsername.textContent = '@' + user.username;
+
+  if (scopeBadgeText) {
+    scopeBadgeText.textContent = isAdm ? '👑 Ruang Administrator' : 'Ruang Akun Pribadi';
+  }
+
+  if (scopeAdminBadge) {
+    if (isAdm) scopeAdminBadge.classList.remove('hidden');
+    else scopeAdminBadge.classList.add('hidden');
+  }
+
+  // Toolbar Akses Penuh Admin (Lihat semua link / filter per user)
+  if (adminAccessToolbar) {
+    if (isAdm) {
+      adminAccessToolbar.classList.remove('hidden');
+      populateAdminLinkScopeSelect();
+    } else {
+      adminAccessToolbar.classList.add('hidden');
+    }
+  }
+
+  // Tombol Admin di navbar
+  if (btnAdminPanel) {
+    btnAdminPanel.classList.remove('hidden');
+    if (navAdminBtnText) {
+      navAdminBtnText.textContent = isAdm ? '👑 Kelola Akun (Admin)' : '👑 Akses Admin';
+    }
+  }
+
+  // Tombol Admin di banner
+  if (btnBannerAdminPanel) {
+    btnBannerAdminPanel.classList.remove('hidden');
+    if (bannerAdminBtnText) {
+      bannerAdminBtnText.textContent = isAdm ? '👑 Kelola Semua Akun & Sandi' : '👑 Buka Akses Admin';
+    }
+  }
+
+  if (btnMenuAdminPanel) {
+    btnMenuAdminPanel.classList.remove('hidden');
+  }
 }
 
-function openAuthModal(defaultTab = 'login') {
+function openAuthModal(defaultTab = 'login', isMandatory = false) {
   const modal = document.getElementById('authModal');
+  if (!modal) return;
+
+  const btnClose = document.getElementById('btnCloseAuthModal');
+  const gateNotice = document.getElementById('authGateNotice');
+
+  // Jika belum ada user aktif atau dipaksa wajib, sembunyikan tombol close & tampilkan pesan sambutan awal
+  const isEnforced = !state.currentUser || isMandatory;
+  if (btnClose) {
+    if (isEnforced) {
+      btnClose.classList.add('hidden');
+    } else {
+      btnClose.classList.remove('hidden');
+    }
+  }
+
+  if (gateNotice) {
+    if (isEnforced) {
+      gateNotice.classList.remove('hidden');
+    } else {
+      gateNotice.classList.add('hidden');
+    }
+  }
+
   switchAuthTab(defaultTab);
   renderQuickAccountsList();
 
@@ -1681,16 +2051,28 @@ function openAuthModal(defaultTab = 'login') {
   modal.setAttribute('aria-hidden', 'false');
 
   if (defaultTab === 'login') {
-    setTimeout(() => document.getElementById('loginUsername').focus(), 80);
+    setTimeout(() => {
+      const el = document.getElementById('loginUsername');
+      if (el) el.focus();
+    }, 80);
   } else {
-    setTimeout(() => document.getElementById('regFullName').focus(), 80);
+    setTimeout(() => {
+      const el = document.getElementById('regFullName');
+      if (el) el.focus();
+    }, 80);
   }
 }
 
 function closeAuthModal() {
+  if (!state.currentUser) {
+    showToast('Harap buat akun Anda dulu atau masuk terlebih dahulu untuk menggunakan aplikasi.', 'warning');
+    return;
+  }
   const modal = document.getElementById('authModal');
-  modal.classList.add('hidden');
-  modal.setAttribute('aria-hidden', 'true');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
 }
 
 function switchAuthTab(tab) {
@@ -1701,17 +2083,25 @@ function switchAuthTab(tab) {
   const modalTitle = document.getElementById('authModalTitle');
 
   if (tab === 'register') {
-    tabLogin.classList.remove('active');
-    tabReg.classList.add('active');
-    formLogin.classList.add('hidden');
-    formReg.classList.remove('hidden');
-    modalTitle.textContent = 'Buat Akun Baru SPPG';
+    if (tabLogin) tabLogin.classList.remove('active');
+    if (tabReg) tabReg.classList.add('active');
+    if (formLogin) formLogin.classList.add('hidden');
+    if (formReg) formReg.classList.remove('hidden');
+    if (modalTitle) modalTitle.textContent = 'Buat Akun Anda Dulu';
+    setTimeout(() => {
+      const el = document.getElementById('regFullName');
+      if (el) el.focus();
+    }, 50);
   } else {
-    tabReg.classList.remove('active');
-    tabLogin.classList.add('active');
-    formReg.classList.add('hidden');
-    formLogin.classList.remove('hidden');
-    modalTitle.textContent = 'Masuk ke Akun Anda';
+    if (tabReg) tabReg.classList.remove('active');
+    if (tabLogin) tabLogin.classList.add('active');
+    if (formReg) formReg.classList.add('hidden');
+    if (formLogin) formLogin.classList.remove('hidden');
+    if (modalTitle) modalTitle.textContent = 'Masuk ke Akun Anda';
+    setTimeout(() => {
+      const el = document.getElementById('loginUsername');
+      if (el) el.focus();
+    }, 50);
   }
 }
 
@@ -1729,6 +2119,36 @@ function handleLoginSubmit(e) {
   const found = accounts.find(a => a.username.toLowerCase() === username);
 
   if (!found) {
+    // Jika tidak ditemukan di lokal dan Cloud Firebase aktif, coba periksa dari Cloud
+    if (state.firebaseDb && state.cloudStatus === 'online') {
+      state.firebaseDb.ref('sppg_accounts/' + username).once('value').then(snap => {
+        const remoteAcc = snap.val();
+        if (remoteAcc) {
+          accounts.push(remoteAcc);
+          saveRegisteredAccounts(accounts);
+          if (remoteAcc.password && remoteAcc.password !== password) {
+            showToast('Password yang Anda masukkan salah.', 'error');
+            document.getElementById('loginPassword').focus();
+          } else {
+            switchUserAccount(remoteAcc);
+            closeAuthModal();
+            showToast(`Selamat datang kembali, ${remoteAcc.fullName}!`, 'success');
+            document.getElementById('loginUsername').value = '';
+            document.getElementById('loginPassword').value = '';
+          }
+        } else {
+          showToast(`Akun dengan username "${username}" belum terdaftar. Silakan buat akun baru.`, 'error');
+          switchAuthTab('register');
+          document.getElementById('regUsername').value = username;
+        }
+      }).catch(() => {
+        showToast(`Akun dengan username "${username}" belum terdaftar. Silakan buat akun baru.`, 'error');
+        switchAuthTab('register');
+        document.getElementById('regUsername').value = username;
+      });
+      return;
+    }
+
     showToast(`Akun dengan username "${username}" belum terdaftar. Silakan buat akun baru.`, 'error');
     switchAuthTab('register');
     document.getElementById('regUsername').value = username;
@@ -1745,6 +2165,8 @@ function handleLoginSubmit(e) {
   switchUserAccount(found);
   closeAuthModal();
   showToast(`Selamat datang kembali, ${found.fullName}!`, 'success');
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
 }
 
 function handleRegisterSubmit(e) {
@@ -1768,19 +2190,19 @@ function handleRegisterSubmit(e) {
     return;
   }
 
-  if (!password || password.length < 4) {
-    showToast('Password minimal 4 karakter', 'error');
+  if (!password || password.length < 3) {
+    showToast('Password minimal 3 karakter', 'error');
     return;
   }
 
   const accounts = getRegisteredAccounts();
   if (accounts.some(a => a.username.toLowerCase() === username)) {
-    showToast(`Username "${username}" sudah digunakan. Silakan gunakan username lain.`, 'error');
+    showToast(`Username "${username}" sudah digunakan. Silakan gunakan username lain atau login.`, 'error');
     document.getElementById('regUsername').focus();
     return;
   }
 
-  // Buat akun baru
+  // Buat akun baru (disimpan beserta sandinya agar Admin bisa melihat/meresetnya)
   const newAccount = {
     id: 'usr-' + Date.now(),
     username,
@@ -1793,15 +2215,10 @@ function handleRegisterSubmit(e) {
   accounts.push(newAccount);
   saveRegisteredAccounts(accounts);
 
-  // Jika terhubung ke Cloud, simpan info akun ke Firebase
+  // Jika terhubung ke Cloud, simpan info akun ke Firebase Realtime Database
   if (state.firebaseDb && state.cloudStatus === 'online') {
     try {
-      state.firebaseDb.ref('sppg_accounts/' + username).set({
-        username,
-        fullName,
-        role: 'SPPG Member',
-        createdAt: newAccount.createdAt
-      });
+      state.firebaseDb.ref('sppg_accounts/' + username).set(newAccount);
     } catch (err) {
       console.warn('Error registering account to Firebase:', err);
     }
@@ -1810,7 +2227,11 @@ function handleRegisterSubmit(e) {
   // Otomatis login ke akun baru
   switchUserAccount(newAccount);
   closeAuthModal();
-  showToast(`Akun @${username} berhasil dibuat! Ruang link pribadi Anda telah siap.`, 'success');
+  showToast(`Selamat datang, ${fullName}! Akun @${username} berhasil dibuat. Ruang link pribadi Anda telah siap.`, 'success');
+
+  document.getElementById('regFullName').value = '';
+  document.getElementById('regUsername').value = '';
+  document.getElementById('regPassword').value = '';
 }
 
 function switchUserAccount(user) {
@@ -1829,11 +2250,37 @@ function switchUserAccount(user) {
 }
 
 function handleLogout() {
-  const confirmed = confirm(`Apakah Anda yakin ingin keluar dari akun @${state.currentUser.username}?`);
+  const userMenu = document.getElementById('userMenu');
+  if (userMenu) userMenu.classList.remove('show');
+
+  const currentName = state.currentUser ? state.currentUser.fullName : 'akun Anda';
+  const confirmed = confirm(`Apakah Anda yakin ingin keluar dari akun ${currentName}?`);
   if (!confirmed) return;
 
-  openAuthModal('login');
-  showToast('Anda telah keluar. Silakan masuk atau pilih akun.', 'info');
+  state.currentUser = null;
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  loadLinks();
+  renderApp();
+  updateUserUI();
+
+  openAuthModal('register', true);
+  showToast('Anda telah keluar. Silakan buat akun baru atau masuk ke akun Anda.', 'info');
+}
+
+function handleAdminModalLogout() {
+  closeAdminModal();
+  handleLogout();
+}
+
+function toggleUserMenu(e) {
+  if (e) {
+    e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+  }
+  const userMenu = document.getElementById('userMenu');
+  const dataMenu = document.getElementById('dataMenu');
+  if (dataMenu) dataMenu.classList.remove('show');
+  if (userMenu) userMenu.classList.toggle('show');
 }
 
 function renderQuickAccountsList() {
@@ -1845,24 +2292,31 @@ function renderQuickAccountsList() {
 
   let html = '';
   accounts.forEach(acc => {
-    const isCurrent = acc.username.toLowerCase() === currentUsername.toLowerCase();
+    const isCurrent = currentUsername && acc.username.toLowerCase() === currentUsername.toLowerCase();
+    const isAdm = isAdminUser(acc);
     const initials = acc.fullName
       ? acc.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
       : acc.username[0].toUpperCase();
 
     html += `
-      <div class="quick-account-item ${isCurrent ? 'is-current' : ''}" data-username="${escapeHtml(acc.username)}">
+      <div class="quick-account-item ${isCurrent ? 'is-current' : ''}" data-username="${escapeHtml(acc.username)}" style="cursor: pointer;">
         <div class="quick-acc-left">
-          <div class="quick-acc-avatar">${initials}</div>
+          <div class="quick-acc-avatar" style="${isAdm ? 'background: #10b981;' : ''}">${initials}</div>
           <div class="quick-acc-names">
-            <span class="quick-acc-name">${escapeHtml(acc.fullName)}</span>
+            <span class="quick-acc-name">${escapeHtml(acc.fullName)} ${isAdm ? '👑' : ''}</span>
             <span class="quick-acc-username">@${escapeHtml(acc.username)}</span>
           </div>
         </div>
-        <span class="quick-acc-action">${isCurrent ? '● Sedang Aktif' : 'Ganti ke Akun Ini ➜'}</span>
+        <span class="quick-acc-action">${isCurrent ? '● Sedang Aktif' : 'Beralih ke Akun Ini ➜'}</span>
       </div>
     `;
   });
+
+  html += `
+    <button type="button" class="btn btn-secondary btn-block btn-sm" style="margin-top: 0.75rem;" onclick="switchAuthTab('register')">
+      ➕ Tambah / Buat Akun Baru
+    </button>
+  `;
 
   container.innerHTML = html;
 
@@ -1871,10 +2325,426 @@ function renderQuickAccountsList() {
       const username = item.getAttribute('data-username');
       const targetUser = accounts.find(a => a.username === username);
       if (targetUser) {
-        switchUserAccount(targetUser);
-        closeAuthModal();
-        showToast(`Beralih ke akun ${targetUser.fullName}`, 'success');
+        if (currentUsername && targetUser.username.toLowerCase() === currentUsername.toLowerCase()) {
+          showToast(`Akun @${targetUser.username} (${targetUser.fullName}) sedang aktif digunakan.`, 'info');
+        } else {
+          switchUserAccount(targetUser);
+          closeAuthModal();
+          showToast(`Berhasil beralih ke akun ${targetUser.fullName}!`, 'success');
+        }
       }
     });
   });
 }
+
+// ===================================================================
+// ADMIN MANAGEMENT PANEL (LIHAT & GANTI PASSWORD PENGGUNA)
+// ===================================================================
+function openAdminModal() {
+  const userMenu = document.getElementById('userMenu');
+  if (userMenu) userMenu.classList.remove('show');
+
+  if (!isAdminUser()) {
+    openAdminPasswordModal();
+    return;
+  }
+  const modal = document.getElementById('adminModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  renderAdminUsersTable();
+  syncAccountsFromCloud();
+}
+
+function closeAdminModal() {
+  const modal = document.getElementById('adminModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function syncAccountsFromCloud() {
+  if (!state.firebaseDb || state.cloudStatus !== 'online') return;
+  state.firebaseDb.ref('sppg_accounts').once('value').then(snap => {
+    const cloudAccs = snap.val();
+    if (cloudAccs) {
+      const localAccs = getRegisteredAccounts();
+      let changed = false;
+      Object.values(cloudAccs).forEach(cAcc => {
+        if (!cAcc || !cAcc.username) return;
+        const idx = localAccs.findIndex(a => a.username.toLowerCase() === cAcc.username.toLowerCase());
+        if (idx >= 0) {
+          if (cAcc.password && localAccs[idx].password !== cAcc.password) {
+            localAccs[idx].password = cAcc.password;
+            changed = true;
+          }
+          if (cAcc.fullName && localAccs[idx].fullName !== cAcc.fullName) {
+            localAccs[idx].fullName = cAcc.fullName;
+            changed = true;
+          }
+        } else {
+          localAccs.push(cAcc);
+          changed = true;
+        }
+      });
+      if (changed) {
+        saveRegisteredAccounts(localAccs);
+        renderAdminUsersTable();
+      }
+    }
+  }).catch(err => {
+    console.warn('Sync accounts error:', err);
+  });
+}
+
+function renderAdminUsersTable() {
+  const tbody = document.getElementById('adminUsersTbody');
+  const countEl = document.getElementById('adminTotalUsers');
+  const searchInput = document.getElementById('adminSearchUsers');
+  if (!tbody) return;
+
+  const accounts = getRegisteredAccounts();
+  const query = (searchInput?.value || '').toLowerCase().trim();
+
+  const filtered = accounts.filter(acc => {
+    if (!query) return true;
+    const name = (acc.fullName || '').toLowerCase();
+    const uname = (acc.username || '').toLowerCase();
+    return name.includes(query) || uname.includes(query);
+  });
+
+  if (countEl) countEl.textContent = `${filtered.length} dari ${accounts.length} Akun`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+          Tidak ditemukan akun dengan kata kunci "${escapeHtml(query)}"
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = '';
+  filtered.forEach(acc => {
+    const isAdm = isAdminUser(acc);
+    const initials = acc.fullName
+      ? acc.fullName.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+      : acc.username[0].toUpperCase();
+
+    const encodedPassword = encodeURIComponent(acc.password || '');
+    const safeUsername = escapeHtml(acc.username);
+    const safeFullName = escapeHtml(acc.fullName);
+    const accId = acc.id || ('usr_' + acc.username);
+
+    html += `
+      <tr>
+        <td>
+          <div class="admin-user-cell">
+            <div class="admin-user-avatar" style="${isAdm ? 'background: #10b981;' : ''}">${initials}</div>
+            <div>
+              <strong>${safeFullName}</strong>
+              ${state.currentUser && acc.username.toLowerCase() === state.currentUser.username.toLowerCase() ? '<span style="font-size: 0.72rem; color: #10b981; font-weight: 700; margin-left: 0.4rem;">(Anda)</span>' : ''}
+            </div>
+          </div>
+        </td>
+        <td><code>@${safeUsername}</code></td>
+        <td>
+          <span class="badge ${isAdm ? 'badge-role-admin' : 'badge-role-member'}">
+            ${isAdm ? '👑 Admin' : '👤 Anggota'}
+          </span>
+        </td>
+        <td>
+          <div class="pwd-chip">
+            <span id="pwdText_${accId}">••••••••</span>
+            <button type="button" class="btn-pwd-eye" id="btnEye_${accId}" onclick="togglePasswordPeek('${accId}', '${encodedPassword}')" title="Klik untuk melihat / sembunyikan password">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </td>
+        <td>
+          <div class="admin-action-btns">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="adminPromptChangePassword('${safeUsername}')" title="Ganti kata sandi akun ini">
+              🔑 Ganti Sandi
+            </button>
+            ${!isAdm ? `
+              <button type="button" class="btn btn-secondary btn-sm text-danger" onclick="adminDeleteAccount('${safeUsername}')" title="Hapus akun pengguna ini">
+                🗑️ Hapus
+              </button>
+            ` : `
+              <span style="font-size: 0.76rem; color: var(--text-muted); padding: 0.2rem 0.5rem;">(Utama)</span>
+            `}
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+function togglePasswordPeek(id, encodedRawPassword) {
+  const span = document.getElementById(`pwdText_${id}`);
+  const eyeBtn = document.getElementById(`btnEye_${id}`);
+  if (!span) return;
+
+  const rawPassword = decodeURIComponent(encodedRawPassword);
+
+  if (span.getAttribute('data-revealed') === 'true') {
+    // Sembunyikan kembali
+    span.textContent = '••••••••';
+    span.removeAttribute('data-revealed');
+    span.style.color = '';
+    span.style.fontWeight = '';
+    if (eyeBtn) {
+      eyeBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      `;
+    }
+  } else {
+    // Tampilkan password asli
+    span.textContent = rawPassword || '(kosong)';
+    span.setAttribute('data-revealed', 'true');
+    span.style.color = '#10b981';
+    span.style.fontWeight = '700';
+    if (eyeBtn) {
+      eyeBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+        </svg>
+      `;
+    }
+  }
+}
+
+function adminPromptChangePassword(username) {
+  if (!isAdminUser()) {
+    showToast('Hanya Administrator yang berhak mengubah sandi pengguna.', 'error');
+    return;
+  }
+
+  const accounts = getRegisteredAccounts();
+  const target = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+  if (!target) {
+    showToast(`Akun @${username} tidak ditemukan.`, 'error');
+    return;
+  }
+
+  const newPass = prompt(
+    `[ADMIN SPPG] Ubah Sandi Pengguna\n\nNama: ${target.fullName}\nUsername: @${target.username}\nSandi Saat Ini: ${target.password}\n\nMasukkan Kata Sandi Baru:`,
+    ''
+  );
+
+  if (newPass === null) return; // Batal klik Cancel
+
+  const trimmed = newPass.trim();
+  if (trimmed.length < 3) {
+    showToast('Kata sandi baru minimal 3 karakter!', 'error');
+    return;
+  }
+
+  // Update di daftar akun lokal
+  target.password = trimmed;
+  saveRegisteredAccounts(accounts);
+
+  // Jika yang diubah adalah akun yang sedang aktif, update sesi aktif
+  if (state.currentUser && state.currentUser.username.toLowerCase() === username.toLowerCase()) {
+    state.currentUser.password = trimmed;
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(state.currentUser));
+  }
+
+  // Jika online dengan Firebase, update ke database cloud
+  if (state.firebaseDb && state.cloudStatus === 'online') {
+    state.firebaseDb.ref(`sppg_accounts/${username}/password`).set(trimmed)
+      .then(() => {
+        console.log(`Password @${username} synced to Firebase Cloud.`);
+      })
+      .catch(err => console.warn('Cloud password update error:', err));
+  }
+
+  showToast(`✅ Berhasil! Sandi akun @${username} (${target.fullName}) telah diubah menjadi: "${trimmed}"`, 'success');
+  renderAdminUsersTable();
+}
+
+function adminDeleteAccount(username) {
+  if (!isAdminUser()) {
+    showToast('Hanya Administrator yang berhak menghapus akun.', 'error');
+    return;
+  }
+
+  if (username.toLowerCase() === 'admin') {
+    showToast('Akun Administrator utama tidak boleh dihapus.', 'warning');
+    return;
+  }
+
+  const accounts = getRegisteredAccounts();
+  const target = accounts.find(a => a.username.toLowerCase() === username.toLowerCase());
+  if (!target) {
+    showToast(`Akun @${username} tidak ditemukan.`, 'error');
+    return;
+  }
+
+  const confirmed = confirm(
+    `Apakah Anda yakin ingin menghapus akun @${username} (${target.fullName})?\n\nSeluruh data link Google Drive yang tersimpan di akun ini juga akan dihapus permanen.`
+  );
+  if (!confirmed) return;
+
+  const updated = accounts.filter(a => a.username.toLowerCase() !== username.toLowerCase());
+  saveRegisteredAccounts(updated);
+
+  const userStorageKey = getUserLinksStorageKey(username);
+  localStorage.removeItem(userStorageKey);
+
+  if (state.firebaseDb && state.cloudStatus === 'online') {
+    state.firebaseDb.ref(`sppg_accounts/${username}`).remove().catch(e => console.warn(e));
+    state.firebaseDb.ref(`sppg_multiusers/${username}`).remove().catch(e => console.warn(e));
+  }
+
+  showToast(`Akun @${username} beserta data link miliknya berhasil dihapus.`, 'info');
+  renderAdminUsersTable();
+}
+
+// ===================================================================
+// ADMIN ACCESS CONTROLLER & PASSWORD GATEWAY
+// ===================================================================
+function handleAdminClick() {
+  const userMenu = document.getElementById('userMenu');
+  if (userMenu) userMenu.classList.remove('show');
+
+  if (isAdminUser()) {
+    openAdminModal();
+  } else {
+    openAdminPasswordModal();
+  }
+}
+
+function openAdminPasswordModal() {
+  const userMenu = document.getElementById('userMenu');
+  if (userMenu) userMenu.classList.remove('show');
+
+  const authModal = document.getElementById('authModal');
+  if (authModal) authModal.classList.add('hidden');
+
+  const modal = document.getElementById('adminPasswordModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    const input = document.getElementById('adminInputPassword');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 80);
+    }
+  }
+}
+
+function closeAdminPasswordModal() {
+  const modal = document.getElementById('adminPasswordModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  // Jika belum login ke akun manapun, kembalikan ke modal buat akun / login wajib
+  if (!state.currentUser) {
+    openAuthModal('register', true);
+  }
+}
+
+function handleAdminPasswordSubmit(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById('adminInputPassword');
+  const pass = (input?.value || '').trim();
+
+  const accounts = getRegisteredAccounts();
+  const adminAcc = accounts.find(a => a.username.toLowerCase() === 'admin') || DEFAULT_ACCOUNTS[0];
+
+  if (pass === adminAcc.password) {
+    closeAdminPasswordModal();
+    switchUserAccount(adminAcc);
+    showToast('👑 Password Benar! Anda sekarang memiliki SEMUA AKSES Administrator.', 'success');
+    openAdminModal();
+  } else {
+    showToast('❌ Password Administrator salah! Akses ditolak.', 'error');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+}
+
+function toggleInputPasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (btn) btn.textContent = '🙈';
+  } else {
+    input.type = 'password';
+    if (btn) btn.textContent = '👁️';
+  }
+}
+
+function handleAdminLinkScopeChange(val) {
+  state.adminViewScope = val;
+  loadLinks();
+  renderApp();
+  if (val === '__all__') {
+    showToast('👑 Menampilkan semua link dari seluruh pengguna & admin', 'info');
+  } else {
+    showToast(`👑 Menampilkan ruang link khusus @${val}`, 'info');
+  }
+}
+
+function populateAdminLinkScopeSelect() {
+  const select = document.getElementById('adminLinkScopeSelect');
+  if (!select) return;
+
+  const accounts = getRegisteredAccounts();
+  let html = `
+    <option value="__all__" ${state.adminViewScope === '__all__' ? 'selected' : ''}>🌐 SEMUA LINK (Seluruh Anggota & Admin)</option>
+    <option value="admin" ${state.adminViewScope === 'admin' ? 'selected' : ''}>👤 Khusus Link Admin (@admin)</option>
+  `;
+
+  accounts.forEach(acc => {
+    if (acc.username.toLowerCase() !== 'admin') {
+      const selected = state.adminViewScope === acc.username ? 'selected' : '';
+      html += `<option value="${escapeHtml(acc.username)}" ${selected}>👤 Link Milik: ${escapeHtml(acc.fullName)} (@${escapeHtml(acc.username)})</option>`;
+    }
+  });
+
+  select.innerHTML = html;
+}
+
+// Expose functions globally for HTML onclick attributes
+window.openAuthModal = openAuthModal;
+window.closeAuthModal = closeAuthModal;
+window.switchAuthTab = switchAuthTab;
+window.switchUserAccount = switchUserAccount;
+window.handleLogout = handleLogout;
+window.toggleUserMenu = toggleUserMenu;
+window.openAdminModal = openAdminModal;
+window.closeAdminModal = closeAdminModal;
+window.renderAdminUsersTable = renderAdminUsersTable;
+window.togglePasswordPeek = togglePasswordPeek;
+window.adminPromptChangePassword = adminPromptChangePassword;
+window.adminDeleteAccount = adminDeleteAccount;
+window.handleAdminClick = handleAdminClick;
+window.openAdminPasswordModal = openAdminPasswordModal;
+window.closeAdminPasswordModal = closeAdminPasswordModal;
+window.handleAdminPasswordSubmit = handleAdminPasswordSubmit;
+window.toggleInputPasswordVisibility = toggleInputPasswordVisibility;
+window.handleAdminLinkScopeChange = handleAdminLinkScopeChange;
+window.populateAdminLinkScopeSelect = populateAdminLinkScopeSelect;
+window.handleAdminModalLogout = handleAdminModalLogout;
+
+
+

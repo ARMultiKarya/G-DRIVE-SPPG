@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2.5">
 </head>
 <body class="theme-light">
   <div id="app" class="app-wrapper">
@@ -92,7 +92,7 @@
 
           <!-- User Profile / Account Dropdown -->
           <div class="btn-group-dropdown">
-            <button id="btnUserAccount" class="btn btn-secondary user-profile-btn" title="Akun Pengguna">
+            <button id="btnUserAccount" class="btn btn-secondary user-profile-btn" title="Klik untuk Buka Menu Akun / Ganti Pengguna">
               <div id="userAvatar" class="user-avatar-circle">A</div>
               <div class="user-btn-text">
                 <span id="navUserName" class="nav-user-name">Admin</span>
@@ -106,9 +106,18 @@
               <div class="user-menu-header">
                 <strong id="menuUserFullName">Administrator SPPG</strong>
                 <span id="menuUsername" class="menu-username-sub">@admin</span>
-                <span class="badge-private-scope">🔒 Ruang Link Pribadi</span>
+                <span id="menuScopeBadge" class="badge-private-scope">🔒 Ruang Link Pribadi</span>
               </div>
               <hr class="dropdown-divider">
+              <button id="btnMenuAdminPanel" class="dropdown-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span>👑 Panel Administrator (Akses Penuh)</span>
+              </button>
               <button id="btnOpenAuthModal" class="dropdown-item">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -116,8 +125,16 @@
                   <line x1="20" y1="8" x2="20" y2="14"></line>
                   <line x1="23" y1="11" x2="17" y2="11"></line>
                 </svg>
-                Ganti Akun / Buat Akun Baru
+                Ganti Akun / Masuk Akun Lain
               </button>
+              <button id="btnOpenRegisterModal" class="dropdown-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                + Buat Akun Baru
+              </button>
+              <hr class="dropdown-divider">
               <button id="btnLogout" class="dropdown-item text-danger">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -128,6 +145,27 @@
               </button>
             </div>
           </div>
+
+          <!-- Admin Quick Button (Always clickable; asks password if not yet admin) -->
+          <button id="btnAdminPanel" class="btn btn-warning admin-btn" title="Panel Administrator (Semua Akses & Sandi)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span id="navAdminBtnText">👑 Panel Admin</span>
+          </button>
+
+          <!-- Direct Visible Logout Button -->
+          <button id="btnNavLogout" class="btn btn-outline-danger btn-nav-logout hidden" title="Keluar / Logout dari akun saat ini">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Keluar</span>
+          </button>
 
           <!-- Theme Toggle Button -->
           <button id="themeToggleBtn" class="btn btn-icon btn-secondary" title="Ganti Mode Gelap / Terang">
@@ -160,32 +198,89 @@
     </header>
 
     <!-- Main Container -->
-    <main class="main-content">
+    <main class="main-content" id="mainContent">
       
       <!-- User Scope Banner (Shows who is currently logged in) -->
-      <section class="user-scope-banner">
+      <section class="user-scope-banner" id="userScopeBanner">
         <div class="user-scope-content">
-          <div class="user-scope-badge">
+          <div class="user-scope-badge" id="btnScopeBadge" style="cursor: pointer;" title="Klik untuk membuka Akses Admin">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
             </svg>
-            <span>Ruang Akun Pribadi</span>
+            <span id="scopeBadgeText">Ruang Akun Pribadi</span>
           </div>
           <div class="user-scope-text">
-            <span>Link yang ditampilkan adalah milik: <strong id="scopeUserFullName">Administrator SPPG</strong> (<code id="scopeUsername">@admin</code>). Pengguna lain memiliki ruang link masing-masing.</span>
+            <span>Link yang ditampilkan adalah milik: 
+              <span id="scopeUserFullNameClickable" class="scope-user-clickable" title="Klik untuk Buka Panel Admin / Ganti Akun">
+                <strong id="scopeUserFullName">Wajib Buat Akun Dulu</strong> (<code id="scopeUsername">@belum_masuk</code>)
+              </span>
+              <span id="scopeAdminBadge" class="badge-role-admin hidden" style="margin-left: 0.4rem; cursor: pointer;" title="Klik untuk Buka Panel Admin">👑 Admin</span>
+            </span>
           </div>
         </div>
-        <button type="button" id="btnBannerSwitchAccount" class="btn btn-secondary btn-sm" title="Ganti akun pengguna">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="8.5" cy="7" r="4"></circle>
-            <line x1="20" y1="8" x2="20" y2="14"></line>
-            <line x1="23" y1="11" x2="17" y2="11"></line>
-          </svg>
-          Ganti Akun
-        </button>
+        <div class="user-scope-actions" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <button type="button" id="btnBannerAdminPanel" class="btn btn-warning btn-sm admin-btn" title="Klik untuk Akses / Kelola Akun Admin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            <span id="bannerAdminBtnText">👑 Panel Administrator</span>
+          </button>
+          <button type="button" id="btnBannerSwitchAccount" class="btn btn-secondary btn-sm" title="Ganti akun pengguna">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+            <span>Ganti Akun</span>
+          </button>
+          <button type="button" id="btnBannerCreateAccount" class="btn btn-primary btn-sm" title="Daftar akun baru">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>+ Buat Akun Baru</span>
+          </button>
+          <button type="button" id="btnBannerLogout" class="btn btn-outline-danger btn-sm hidden" title="Keluar dari akun saat ini">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Keluar (Logout)</span>
+          </button>
+        </div>
       </section>
+
+      <!-- Admin All-Access Scope Filter Bar (Allows Admin to see ALL user links or filter by specific user) -->
+      <section id="adminAccessToolbar" class="admin-access-toolbar hidden">
+        <div class="admin-toolbar-content">
+          <div class="admin-toolbar-title">
+            <span class="admin-crown-icon">👑</span>
+            <div>
+              <strong>Akses Penuh Administrator:</strong>
+              <span class="admin-toolbar-sub">Admin dapat melihat semua link seluruh anggota atau memilih akun tertentu.</span>
+            </div>
+          </div>
+          <div class="admin-toolbar-controls">
+            <label for="adminLinkScopeSelect" class="form-label-inline">Tampilkan Link:</label>
+            <select id="adminLinkScopeSelect" class="form-control form-control-sm admin-scope-select" onchange="handleAdminLinkScopeChange(this.value)">
+              <option value="__all__">🌐 SEMUA LINK (Seluruh Anggota & Admin)</option>
+              <option value="admin" selected>👤 Khusus Link Admin (@admin)</option>
+            </select>
+            <button type="button" id="btnToolbarManageAccounts" class="btn btn-warning btn-sm">
+              🔑 Kelola Semua Akun & Kata Sandi
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Protected App Content (Blurred when not logged in) -->
+      <div id="mainAppContent" class="main-app-content">
 
       <!-- Stats & Quick Overview Cards -->
       <section class="stats-grid">
@@ -356,7 +451,9 @@
           </svg>
           Tambah Link Baru Sekarang
         </button>
-      </div>
+      </div> <!-- /emptyState -->
+
+      </div> <!-- /mainAppContent -->
 
     </main>
 
@@ -714,14 +811,31 @@
         </div>
 
         <div class="modal-body">
+          <!-- Auth Gate Notice (Shown when first visiting link or logged out) -->
+          <div id="authGateNotice" class="auth-gate-banner">
+            <div class="auth-gate-icon">🔒</div>
+            <div class="auth-gate-text">
+              <strong>Portal Link Google Drive SPPG Terkunci</strong><br>
+              Sebelum dapat mengakses aplikasi, Anda <strong>wajib membuat akun Anda terlebih dahulu</strong> (atau klik tab <strong>Masuk</strong> jika Anda sudah memiliki akun / sebagai Administrator).
+              <div style="margin-top: 0.6rem;">
+                <button type="button" id="btnAuthOpenAdminPass" class="btn btn-warning btn-sm" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                  👑 Buka Akses Administrator (Dengan Password Admin)
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Auth Tabs -->
           <div class="auth-tabs">
-            <button id="tabAuthLogin" class="auth-tab active" type="button">Masuk (Login)</button>
-            <button id="tabAuthRegister" class="auth-tab" type="button">Buat Akun Baru</button>
+            <button id="tabAuthRegister" class="auth-tab active" type="button">Buat Akun Baru</button>
+            <button id="tabAuthLogin" class="auth-tab" type="button">Masuk (Login)</button>
           </div>
 
           <!-- LOGIN FORM -->
-          <form id="loginForm" class="auth-form-view">
+          <form id="loginForm" class="auth-form-view hidden">
+            <div class="auth-admin-hint" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin-bottom: 1rem; font-size: 0.8rem;">
+              👑 <strong>Masuk sebagai Administrator:</strong> Masukkan username <code>admin</code> dan password <code>admin</code> untuk membuka SEMUA AKSES.
+            </div>
             <div class="form-group">
               <label for="loginUsername" class="form-label">Username <span class="required-star">*</span></label>
               <input type="text" id="loginUsername" class="form-control" placeholder="Contoh: ahmad, budi, admin..." required autocomplete="username">
@@ -733,10 +847,15 @@
             <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1.25rem;">
               <span>Masuk ke Akun Saya</span>
             </button>
+            <div style="text-align: center; margin-top: 1rem;">
+              <button type="button" id="btnSwitchToRegister" class="btn-link" style="background: none; border: none; color: var(--brand-blue); cursor: pointer; font-size: 0.82rem; text-decoration: underline;">
+                Belum punya akun? Buat akun Anda dulu di sini ➔
+              </button>
+            </div>
           </form>
 
           <!-- REGISTER FORM -->
-          <form id="registerForm" class="auth-form-view hidden">
+          <form id="registerForm" class="auth-form-view">
             <div class="form-group">
               <label for="regFullName" class="form-label">Nama Lengkap <span class="required-star">*</span></label>
               <input type="text" id="regFullName" class="form-control" placeholder="Contoh: Ahmad Rizky" required autocomplete="name">
@@ -744,15 +863,20 @@
             <div class="form-group">
               <label for="regUsername" class="form-label">Username (ID Akun) <span class="required-star">*</span></label>
               <input type="text" id="regUsername" class="form-control" placeholder="Hanya huruf kecil/angka (tanpa spasi)" required autocomplete="username">
-              <div class="form-hint">Username ini akan menjadi identitas ruang link Anda.</div>
+              <div class="form-hint">Username ini akan menjadi identitas ruang link pribadi Anda.</div>
             </div>
             <div class="form-group">
               <label for="regPassword" class="form-label">Password <span class="required-star">*</span></label>
-              <input type="password" id="regPassword" class="form-control" placeholder="Minimal 4 karakter" required autocomplete="new-password">
+              <input type="password" id="regPassword" class="form-control" placeholder="Minimal 3 karakter" required autocomplete="new-password">
             </div>
             <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1.25rem;">
-              <span>Daftar & Masuk Sekarang</span>
+              <span>➕ Buat Akun & Masuk Sekarang</span>
             </button>
+            <div style="text-align: center; margin-top: 1rem;">
+              <button type="button" id="btnSwitchToLogin" class="btn-link" style="background: none; border: none; color: var(--brand-blue); cursor: pointer; font-size: 0.82rem; text-decoration: underline;">
+                Sudah memiliki akun atau Admin? Masuk di sini ➔
+              </button>
+            </div>
           </form>
 
           <!-- Quick Account Switcher on this device -->
@@ -766,16 +890,120 @@
       </div>
     </div>
 
+    <!-- Modal Masukkan Password Admin (Untuk Membuka Semua Akses) -->
+    <div id="adminPasswordModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog modal-dialog-sm">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-header" style="background: rgba(245, 158, 11, 0.15); color: #d97706;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 class="modal-title">Akses Administrator SPPG</h2>
+              <span class="modal-subtitle">Masukkan password Admin untuk membuka SEMUA AKSES</span>
+            </div>
+          </div>
+          <button id="btnCloseAdminPassModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <form id="adminPasswordForm">
+          <div class="modal-body">
+            <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.5;">
+              Halaman ini dilindungi. Masukkan kata sandi Administrator untuk melihat seluruh akun pengguna, melihat & mengganti sandi anggota, serta mengelola semua link.
+            </p>
+            <div class="form-group">
+              <label for="adminInputPassword" class="form-label">Password Administrator <span class="required-star">*</span></label>
+              <div class="input-with-icon" style="position: relative;">
+                <input type="password" id="adminInputPassword" class="form-control" placeholder="Masukkan password admin (bawaan: admin)" required autocomplete="current-password">
+                <button type="button" id="btnToggleAdminPass" class="btn-toggle-peek" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1rem;">👁️</button>
+              </div>
+              <div class="form-hint">Password bawaan Admin adalah: <code>admin</code></div>
+            </div>
+          </div>
+          <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem; padding: 1rem 1.25rem; border-top: 1px solid var(--border-color);">
+            <button type="button" id="btnCancelAdminPassModal" class="btn btn-secondary">Batal</button>
+            <button type="submit" class="btn btn-primary" style="background: #d97706; border-color: #d97706;">
+              <span>👑 Buka Semua Akses Admin</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Admin Kelola Pengguna & Password -->
+    <div id="adminModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog" style="max-width: 720px;">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-header" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div>
+              <h2 class="modal-title">Panel Manajemen Pengguna (Admin)</h2>
+              <span class="modal-subtitle">Lihat semua akun anggota, ganti kata sandi, & kelola akun</span>
+            </div>
+          </div>
+          <!-- Logout Button directly inside Admin Modal Header -->
+          <button type="button" id="btnAdminModalLogout" class="btn btn-outline-danger btn-sm" title="Keluar / Logout dari mode Administrator" style="margin-left: auto; margin-right: 0.75rem;">
+            🚪 Keluar (Logout)
+          </button>
+          <button id="btnCloseAdminModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="admin-stats-bar">
+            <span>Total Pengguna: <strong id="adminTotalUsers">0</strong></span>
+            <input type="text" id="adminSearchUsers" class="form-control admin-search-input" placeholder="🔍 Cari nama atau username...">
+          </div>
+
+          <!-- Table of Registered Users -->
+          <div class="admin-table-wrapper">
+            <table class="admin-users-table">
+              <thead>
+                <tr>
+                  <th>Nama Pengguna</th>
+                  <th>Username</th>
+                  <th>Peran</th>
+                  <th>Password Saat Ini</th>
+                  <th style="text-align: right;">Aksi Admin</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   </div>
 
-  <script src="firebase-config.js"></script>
+  <script src="firebase-config.js?v=2.5"></script>
   <!-- Firebase App & Database Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="qrcode.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

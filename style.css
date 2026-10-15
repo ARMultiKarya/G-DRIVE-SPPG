@@ -1012,15 +1012,23 @@ button, input, select, textarea {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.65);
+  background-color: rgba(15, 23, 42, 0.7);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
-  z-index: 1000;
+  z-index: 99999 !important;
   animation: fadeIn 0.2s ease-out;
+}
+
+.modal-backdrop.hidden {
+  display: none !important;
+}
+
+.modal-backdrop:not(.hidden) {
+  display: flex !important;
 }
 
 .modal-dialog {
@@ -1830,5 +1838,315 @@ button, input, select, textarea {
   font-weight: 700;
   color: var(--brand-blue);
 }
+
+/* ===================================================================
+   ADMIN MANAGEMENT PANEL STYLES
+   =================================================================== */
+.admin-btn {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.admin-btn:hover {
+  background: #10b981;
+  color: #ffffff;
+}
+
+.admin-stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+}
+
+.admin-search-input {
+  max-width: 250px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+}
+
+.admin-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  text-align: left;
+}
+
+.admin-users-table th {
+  padding: 0.75rem 0.85rem;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-users-table td {
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.admin-users-table tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.admin-user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand-blue);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.76rem;
+}
+
+.badge-role-admin {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+.badge-role-member {
+  background: var(--brand-blue-subtle);
+  color: var(--brand-blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+.pwd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+}
+
+.btn-pwd-eye {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.btn-pwd-eye:hover {
+  color: var(--text-main);
+}
+
+.admin-action-btns {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+/* Auth Gate Banner (First visit / mandatory account creation) */
+.auth-gate-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(26, 115, 232, 0.08);
+  border: 1px solid rgba(26, 115, 232, 0.22);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.84rem;
+  color: var(--text-main);
+  line-height: 1.45;
+}
+
+.auth-gate-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.auth-gate-text strong {
+  color: var(--brand-blue);
+}
+
+/* Clickable Admin Triggers in Scope Banner */
+.scope-user-clickable {
+  cursor: pointer;
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.scope-user-clickable:hover {
+  background-color: var(--brand-blue-subtle);
+  color: var(--brand-blue);
+  text-decoration: underline;
+}
+
+/* Admin All-Access Scope Filter Toolbar */
+.admin-access-toolbar {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(217, 119, 6, 0.08) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.08);
+}
+
+.admin-toolbar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.86rem;
+}
+
+.admin-crown-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.admin-toolbar-sub {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.admin-toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.admin-scope-select {
+  min-width: 280px;
+  font-weight: 600;
+  border-color: #d97706 !important;
+  color: var(--text-main);
+  background-color: var(--bg-surface);
+}
+
+/* Owner Badge on Link Card (Shown when Admin views all links) */
+.badge-owner {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Gated Blur on Background content before logging in */
+.auth-gated-blur {
+  filter: blur(5px) grayscale(35%);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.45;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Direct Logout Button in Navbar */
+.btn-nav-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+  border-radius: var(--radius-md);
+  color: var(--danger-color);
+  background: transparent;
+  border: 1px solid var(--danger-color);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-nav-logout:hover {
+  background: var(--danger-color);
+  color: #ffffff;
+}
+
+/* Outline Danger Button */
+.btn-outline-danger {
+  background: transparent;
+  color: var(--danger-color);
+  border: 1px solid var(--danger-color);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-outline-danger:hover {
+  background: var(--danger-color);
+  color: #ffffff;
+}
+
+/* Main Protected App Content Wrapper */
+.main-app-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+/* Warning / Gold Buttons */
+.btn-warning {
+  background: #d97706;
+  color: #ffffff;
+  border: 1px solid #b45309;
+  font-weight: 700;
+}
+
+.btn-warning:hover {
+  background: #b45309;
+  color: #ffffff;
+}
+
+
+
 
 
