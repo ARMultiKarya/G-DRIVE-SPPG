@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pengelola Link Google Drive - SPPG</title>
+  <meta name="description" content="Aplikasi modern dan praktis untuk menyimpan, mencari, dan membuka link Google Drive SPPG secara langsung dan terorganisir.">
+  
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-light">
+  <div id="app" class="app-wrapper">
+    
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="nav-container">
+        <div class="brand">
+          <div class="brand-logo-wrapper">
+            <!-- Google Drive Style Custom SVG Logo -->
+            <svg class="gdrive-svg-logo" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+              <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+              <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47"/>
+              <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+              <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.25z" fill="#00832d"/>
+              <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+              <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <div class="brand-title-row">
+              <span class="brand-title">LINK G-DRIVE</span>
+              <span class="brand-badge">SPPG</span>
+            </div>
+            <span class="brand-subtitle">Pusat Pintasan Berkas & Folder Google Drive</span>
+          </div>
+        </div>
+
+        <div class="nav-actions">
+          <!-- Backup & Restore Buttons -->
+          <div class="btn-group-dropdown">
+            <button id="btnBackup" class="btn btn-secondary btn-icon" title="Cadangkan atau Pulihkan Data (Backup/Restore)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Data Data</span>
+            </button>
+            <div id="dataMenu" class="dropdown-menu">
+              <button id="btnExportJson" class="dropdown-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export / Cadangkan Data (JSON)
+              </button>
+              <label for="importFileInput" class="dropdown-item">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Import / Pulihkan Data (JSON)
+              </label>
+              <input type="file" id="importFileInput" accept=".json" style="display:none;">
+              <hr class="dropdown-divider">
+              <button id="btnResetDefault" class="dropdown-item text-danger">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="1 4 1 10 7 10"></polyline>
+                  <polyline points="23 20 23 14 17 14"></polyline>
+                  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+                </svg>
+                Muat Ulang Contoh Awal
+              </button>
+            </div>
+          </div>
+
+          <!-- Theme Toggle Button -->
+          <button id="themeToggleBtn" class="btn btn-icon btn-secondary" title="Ganti Mode Gelap / Terang">
+            <svg id="moonIcon" class="icon-theme" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <svg id="sunIcon" class="icon-theme hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+          </button>
+
+          <!-- Primary Add Link Button -->
+          <button id="btnOpenAddModal" class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Tambah Link Drive</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+      
+      <!-- Stats & Quick Overview Cards -->
+      <section class="stats-grid">
+        <div class="stat-card" data-stat-filter="all">
+          <div class="stat-icon-wrap stat-blue">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="statTotalLinks">0</span>
+            <span class="stat-label">Total Link Tersimpan</span>
+          </div>
+        </div>
+
+        <div class="stat-card" data-stat-filter="folder">
+          <div class="stat-icon-wrap stat-amber">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="statFolderLinks">0</span>
+            <span class="stat-label">Folder Drive SPPG</span>
+          </div>
+        </div>
+
+        <div class="stat-card" data-stat-filter="docs">
+          <div class="stat-icon-wrap stat-emerald">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="statDocLinks">0</span>
+            <span class="stat-label">Dokumen & Spreadsheet</span>
+          </div>
+        </div>
+
+        <div class="stat-card" data-stat-filter="favorite">
+          <div class="stat-icon-wrap stat-rose">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </div>
+          <div class="stat-info">
+            <span class="stat-value" id="statFavoriteLinks">0</span>
+            <span class="stat-label">Link Favorit (Pinned)</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Search, Categories, and Control Toolbar -->
+      <section class="toolbar-section">
+        <div class="search-bar-wrap">
+          <div class="search-input-box">
+            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="searchInput" placeholder="Cari nama berkas, catatan, URL, atau tag SPPG... (Tekan /)" autocomplete="off">
+            <button id="clearSearchBtn" class="clear-search-btn hidden" title="Hapus pencarian">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="filter-controls-row">
+          <!-- Type Filter Tabs -->
+          <div class="filter-tabs" id="filterTabs">
+            <button class="filter-tab active" data-type="all">Semua</button>
+            <button class="filter-tab" data-type="folder">
+              <span class="tab-dot dot-folder"></span> Folder
+            </button>
+            <button class="filter-tab" data-type="spreadsheet">
+              <span class="tab-dot dot-sheets"></span> Spreadsheet
+            </button>
+            <button class="filter-tab" data-type="document">
+              <span class="tab-dot dot-docs"></span> Dokumen
+            </button>
+            <button class="filter-tab" data-type="form">
+              <span class="tab-dot dot-forms"></span> Formulir
+            </button>
+            <button class="filter-tab" data-type="favorite">
+              <span class="tab-star">★</span> Favorit
+            </button>
+          </div>
+
+          <!-- Sorting & Layout Toggle -->
+          <div class="controls-right">
+            <div class="sort-select-wrap">
+              <label for="sortSelect" class="sort-label">Urutkan:</label>
+              <select id="sortSelect" class="form-select sort-select">
+                <option value="newest">Terbaru Ditambahkan</option>
+                <option value="oldest">Terlama</option>
+                <option value="name_asc">Nama (A - Z)</option>
+                <option value="name_desc">Nama (Z - A)</option>
+                <option value="clicks">Paling Sering Dibuka</option>
+              </select>
+            </div>
+
+            <div class="view-toggle">
+              <button id="viewGridBtn" class="btn-view active" title="Tampilan Kisi (Grid)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="14" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+              </button>
+              <button id="viewListBtn" class="btn-view" title="Tampilan Daftar (List)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tag pills row -->
+        <div class="tags-filter-bar" id="tagsFilterBar">
+          <span class="tags-label">Kategori SPPG:</span>
+          <div class="tags-container" id="tagsContainer">
+            <!-- Dynamic tags populated here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Filter Status Info -->
+      <div id="filterStatusInfo" class="filter-status-info hidden">
+        <span>Menampilkan hasil penyaringan: <strong id="filterStatusCount">0</strong> link ditemukan</span>
+        <button id="btnResetFilters" class="btn-text-link">Reset Semua Filter</button>
+      </div>
+
+      <!-- Links Container -->
+      <section id="linksGrid" class="links-grid-view">
+        <!-- Rendered dynamically by app.js -->
+      </section>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="empty-state hidden">
+        <div class="empty-illustration">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <h3 class="empty-title">Tidak ada link ditemukan</h3>
+        <p class="empty-desc">Coba sesuaikan kata kunci pencarian atau filter yang Anda pilih.</p>
+        <button id="btnEmptyAdd" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Tambah Link Baru Sekarang
+        </button>
+      </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-container">
+        <p class="footer-left">
+          <strong>LINK G-DRIVE SPPG</strong> &bull; Tersimpan otomatis di browser lokal Anda dengan aman.
+        </p>
+        <p class="footer-right">
+          Klik tombol <strong>"Buka Google Drive"</strong> pada kartu link untuk langsung membuka berkas di tab baru.
+        </p>
+      </div>
+    </footer>
+
+    <!-- Modal Form (Tambah / Edit Link) -->
+    <div id="linkModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-header">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+            </div>
+            <h2 id="modalTitle" class="modal-title">Tambah Link Google Drive</h2>
+          </div>
+          <button id="btnCloseModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <form id="linkForm" class="modal-form" novalidate>
+          <input type="hidden" id="linkId">
+
+          <!-- URL Input First for Smart Auto-Detection -->
+          <div class="form-group">
+            <label for="linkUrl" class="form-label">
+              URL / Link Google Drive <span class="required-star">*</span>
+            </label>
+            <div class="input-with-action">
+              <input 
+                type="url" 
+                id="linkUrl" 
+                class="form-control" 
+                placeholder="https://drive.google.com/... atau https://docs.google.com/..." 
+                required
+                autocomplete="off"
+              >
+              <button type="button" id="btnPasteUrl" class="btn-input-addon" title="Tempel dari Clipboard">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                </svg>
+                Tempel
+              </button>
+            </div>
+            <div id="urlHint" class="form-hint">
+              💡 Tip: Masukkan link sharing Google Drive (Folder, Docs, Sheets, Forms, Slides, atau File).
+            </div>
+          </div>
+
+          <!-- Judul / Nama Berkas -->
+          <div class="form-group">
+            <label for="linkTitle" class="form-label">
+              Nama Berkas / Folder SPPG <span class="required-star">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="linkTitle" 
+              class="form-control" 
+              placeholder="Contoh: Laporan Keuangan SPPG 2026, Folder Foto Lapangan..." 
+              required
+              autocomplete="off"
+            >
+          </div>
+
+          <!-- Grid: Tipe Berkas & Kategori -->
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="linkType" class="form-label">Tipe Berkas Google</label>
+              <select id="linkType" class="form-select">
+                <option value="folder">📁 Folder Google Drive</option>
+                <option value="spreadsheet">📊 Google Sheets (Spreadsheet)</option>
+                <option value="document">📝 Google Docs (Dokumen)</option>
+                <option value="form">📋 Google Forms (Formulir)</option>
+                <option value="presentation">📽️ Google Slides (Presentasi)</option>
+                <option value="pdf">📄 Berkas PDF / Dokumen Lain</option>
+                <option value="file">📦 File Lainnya</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="linkCategory" class="form-label">Kategori / Divisi</label>
+              <input 
+                type="text" 
+                id="linkCategory" 
+                list="categoryPresets" 
+                class="form-control" 
+                placeholder="Pilih atau ketik kategori..."
+                autocomplete="off"
+              >
+              <datalist id="categoryPresets">
+                <option value="SPPG Utama">
+                <option value="Laporan Keuangan">
+                <option value="Operasional">
+                <option value="Surat & Administrasi">
+                <option value="Dokumentasi & Media">
+                <option value="Master Data">
+                <option value="SDM & Personalia">
+                <option value="Arsip">
+              </datalist>
+            </div>
+          </div>
+
+          <!-- Catatan / Deskripsi -->
+          <div class="form-group">
+            <label for="linkDescription" class="form-label">Keterangan / Catatan Singkat (Opsional)</label>
+            <textarea 
+              id="linkDescription" 
+              class="form-control form-textarea" 
+              rows="3" 
+              placeholder="Catatan isi folder, siapa yang berhak akses, periode, dsb..."
+            ></textarea>
+          </div>
+
+          <!-- Checkbox Favorit -->
+          <div class="form-group-checkbox">
+            <label class="custom-checkbox-label">
+              <input type="checkbox" id="linkFavorite" class="custom-checkbox">
+              <span class="checkbox-custom-ui"></span>
+              <span class="checkbox-text">
+                <strong>Tandai sebagai Favorit (Pin ke Atas)</strong>
+                <span class="checkbox-subtext">Link favorit akan selalu mudah ditemukan di bagian awal</span>
+              </span>
+            </label>
+          </div>
+
+          <!-- Modal Actions -->
+          <div class="modal-footer">
+            <button type="button" id="btnCancelModal" class="btn btn-secondary">Batal</button>
+            <button type="submit" id="btnSaveLink" class="btn btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                <polyline points="7 3 7 8 15 8"></polyline>
+              </svg>
+              <span>Simpan Link</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal QR Code -->
+    <div id="qrModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog modal-dialog-sm text-center">
+        <div class="modal-header">
+          <h2 class="modal-title">QR Code Link Google Drive</h2>
+          <button id="btnCloseQrModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="qr-content-body">
+          <p id="qrItemTitle" class="qr-item-title">Nama Berkas</p>
+          <div class="qr-canvas-wrapper">
+            <div id="qrCanvasContainer"></div>
+          </div>
+          <p class="qr-instructions">Pindai dengan kamera smartphone untuk langsung membuka file Google Drive di ponsel.</p>
+          <div class="qr-actions">
+            <button id="btnOpenQrDirect" class="btn btn-primary btn-block">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+              Buka Google Drive Langsung
+            </button>
+            <button id="btnCopyQrUrl" class="btn btn-secondary btn-block">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Salin URL
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog modal-dialog-sm">
+        <div class="modal-header">
+          <h2 class="modal-title text-danger">Konfirmasi Hapus Link</h2>
+          <button id="btnCloseConfirmModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p>Apakah Anda yakin ingin menghapus link berikut dari daftar?</p>
+          <div class="delete-preview-box">
+            <strong id="deleteItemTitle">-</strong>
+            <span id="deleteItemUrl" class="delete-preview-url">-</span>
+          </div>
+          <p class="modal-subtext">Tindakan ini tidak dapat dibatalkan, namun Anda bisa menambahkannya kembali nanti.</p>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCancelDelete" class="btn btn-secondary">Batal</button>
+          <button id="btnConfirmDelete" class="btn btn-danger">Hapus Sekarang</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  </div>
+
+  <script src="qrcode.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

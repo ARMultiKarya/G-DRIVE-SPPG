@@ -1,0 +1,17 @@
+{
+  "name": "link-gdrive-sppg",
+  "version": "1.0.0",
+  "description": "Aplikasi Penyimpan dan Pengelola Link Google Drive SPPG",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "google-drive",
+    "link-manager",
+    "sppg",
+    "bookmarks"
+  ],
+  "author": "",
+  "license": "MIT"
+}
