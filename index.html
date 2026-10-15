@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=2.7">
+  <link rel="stylesheet" href="style.css?v=3.0">
 </head>
 <body class="theme-light">
   <div id="app" class="app-wrapper">
@@ -382,6 +382,8 @@
             <div class="sort-select-wrap">
               <label for="sortSelect" class="sort-label">Urutkan:</label>
               <select id="sortSelect" class="form-select sort-select">
+                <option value="custom" selected>📌 Tata Letak Bebas (Bisa Geser-Geser Kartu)</option>
+                <option value="category">🏷️ Kelompokkan Wilayah / Kategori (Berdampingan)</option>
                 <option value="newest">Terbaru Ditambahkan</option>
                 <option value="oldest">Terlama</option>
                 <option value="name_asc">Nama (A - Z)</option>
@@ -415,12 +417,47 @@
 
         <!-- Tag pills row -->
         <div class="tags-filter-bar" id="tagsFilterBar">
-          <span class="tags-label">Kategori SPPG:</span>
-          <div class="tags-container" id="tagsContainer">
-            <!-- Dynamic tags populated here -->
+          <div class="tags-bar-header">
+            <span class="tags-label">Kategori SPPG:</span>
+            <button id="btnManageCategories" class="btn-manage-categories" type="button" title="Ubah, geser urutan, atau tambah kategori SPPG">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+              <span>Ubah & Kelola</span>
+            </button>
+          </div>
+          
+          <div class="tags-scroll-wrapper">
+            <button id="btnScrollTagsLeft" class="btn-tags-scroll btn-scroll-left hidden" type="button" title="Geser ke kiri" aria-label="Geser kategori ke kiri">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"></polyline>
+              </svg>
+            </button>
+
+            <div class="tags-container" id="tagsContainer" title="Klik untuk memfilter, tahan & geser chip untuk mengatur urutan posisi">
+              <!-- Dynamic draggable category tags populated here -->
+            </div>
+
+            <button id="btnScrollTagsRight" class="btn-tags-scroll btn-scroll-right hidden" type="button" title="Geser ke kanan" aria-label="Geser kategori ke kanan">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
           </div>
         </div>
       </section>
+
+      <!-- Custom Layout Info Banner -->
+      <div id="layoutHintBanner" class="layout-hint-banner">
+        <div class="layout-hint-content">
+          <span class="layout-hint-icon">💡</span>
+          <span class="layout-hint-text">
+            <strong>Atur Tata Letak Bebas:</strong> Anda dapat menggeser & menyandingkan kartu secara langsung (misal: MAKER KAJORAN berdampingan dengan LPDH KAJORAN) dengan menarik kartu atau menggunakan tombol ◀ / ▶ pada kartu.
+          </span>
+        </div>
+        <button id="btnDismissLayoutHint" class="btn-dismiss-hint" title="Tutup pemberitahuan ini">✕</button>
+      </div>
 
       <!-- Active Filter Status Info -->
       <div id="filterStatusInfo" class="filter-status-info hidden">
@@ -1000,16 +1037,99 @@
       </div>
     </div>
 
+    <!-- Modal Kelola & Urutkan Kategori SPPG -->
+    <div id="manageCategoryModal" class="modal-backdrop hidden" aria-hidden="true" role="dialog">
+      <div class="modal-dialog modal-dialog-md">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h2 class="modal-title">Kelola & Urutkan Kategori SPPG</h2>
+            <span class="modal-subtitle">Ubah nama, atur warna, geser urutan tampil, atau tambah kategori baru</span>
+          </div>
+          <button id="btnCloseManageCategoryModal" class="btn-close-modal" aria-label="Tutup modal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Form Tambah Kategori -->
+          <div class="add-category-box">
+            <label for="newCategoryInput" class="form-label">Tambah Kategori Baru</label>
+            <form id="formAddCategory" class="add-cat-form-row">
+              <input 
+                type="color" 
+                id="newCategoryColor" 
+                value="#10b981" 
+                class="new-cat-color-picker" 
+                title="Pilih warna untuk kategori baru (Klik untuk ganti warna)"
+              >
+              <input 
+                type="text" 
+                id="newCategoryInput" 
+                class="form-control" 
+                placeholder="Ketik nama kategori (misal: KAJORAN, NGADIHARJO)..." 
+                maxlength="40"
+                autocomplete="off"
+              >
+              <button type="submit" id="btnAddCategorySubmit" class="btn btn-primary btn-add-cat">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Tambah</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Petunjuk Geser & Ubah -->
+          <div class="category-manage-hint">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>Tips: Klik lingkaran warna 🎨 pada kategori untuk memilih warna sesuka Anda (Merah, Hijau, Biru, dll). Gunakan tombol ⬆️ ⬇️ untuk menggeser posisi urutan, atau klik <strong>✏️ Ubah</strong> untuk mengganti nama.</span>
+          </div>
+
+          <!-- List Kategori Reorder -->
+          <div class="category-manage-list-wrapper">
+            <div class="category-manage-list-header">
+              <span>Daftar Kategori SPPG (<strong id="totalCategoriesCount">0</strong>)</span>
+              <div class="header-action-links" style="display: flex; gap: 0.75rem; align-items: center;">
+                <button type="button" id="btnAutoCategorizeLinks" class="btn-text-link" title="Otomatis kelompokkan link berdasarkan nama wilayah (Kajoran, Ngadiharjo, Menoreh, Beseran, dll)">
+                  🪄 Auto-Kategori dari Judul
+                </button>
+                <button type="button" id="btnSortCategoriesAlpha" class="btn-text-link" title="Urutkan alfabetik A-Z">
+                  Urutkan A-Z
+                </button>
+              </div>
+            </div>
+            <div id="categoryManageList" class="category-manage-list">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btnDoneManageCategory" class="btn btn-primary">
+            <span>Selesai & Simpan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   </div>
 
-  <script src="firebase-config.js?v=2.7"></script>
+  <script src="firebase-config.js?v=3.0"></script>
   <!-- Firebase App & Database Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
   <script src="qrcode.min.js"></script>
-  <script src="app.js?v=2.7"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>

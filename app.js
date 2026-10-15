@@ -9,6 +9,8 @@ const ACCOUNTS_STORAGE_KEY = 'sppg_registered_accounts_v1';
 const SESSION_STORAGE_KEY = 'sppg_active_session_v1';
 const THEME_STORAGE_KEY = 'sppg_gdrive_theme_pref';
 const VIEW_STORAGE_KEY = 'sppg_gdrive_view_pref';
+const SORT_STORAGE_KEY = 'sppg_gdrive_sort_pref';
+const LAYOUT_HINT_DISMISSED_KEY = 'sppg_layout_hint_dismissed_v1';
 const CLOUD_CONFIG_STORAGE_KEY = 'sppg_firebase_config_v1';
 
 // Initial Starter Data
@@ -94,7 +96,7 @@ let state = {
   searchQuery: '',
   selectedType: 'all',
   selectedTag: 'all',
-  sortBy: 'newest',
+  sortBy: 'custom', // 'custom' | 'category' | 'newest' | 'oldest' | 'name_asc' | 'name_desc' | 'clicks'
   viewMode: 'grid', // 'grid' | 'list'
   deletingId: null,
   activeQrUrl: null,
@@ -103,7 +105,10 @@ let state = {
   firebaseDb: null,
   firebaseConfig: null,
   firebaseUserLinksRef: null,
-  adminViewScope: '__all__' // '__all__' | 'admin' | specific username
+  adminViewScope: '__all__', // '__all__' | 'admin' | specific username
+  categoryOrder: [],
+  customCategories: [],
+  categoryColors: {}
 };
 
 // SVG Icon Definitions
@@ -206,6 +211,7 @@ function getUserLinksStorageKey(username) {
 document.addEventListener('DOMContentLoaded', () => {
   loadThemePreference();
   loadViewPreference();
+  loadSortPreference();
   initUserSession();
   loadLinks();
   initEventListeners();
@@ -224,6 +230,7 @@ function loadLinks() {
     state.links = [];
     return;
   }
+  loadCategoryData();
 
   // Jika Pengunjung Mode Demo: muat data contoh SPPG untuk dieksplorasi
   if (state.currentUser.username === 'demo') {
@@ -615,10 +622,28 @@ function initEventListeners() {
   });
 
   // Sort dropdown
-  document.getElementById('sortSelect').addEventListener('change', (e) => {
-    state.sortBy = e.target.value;
-    renderApp();
-  });
+  const sortSelect = document.getElementById('sortSelect');
+  if (sortSelect) {
+    sortSelect.value = state.sortBy || 'custom';
+    sortSelect.addEventListener('change', (e) => {
+      state.sortBy = e.target.value;
+      saveSortPreference(state.sortBy);
+      renderApp();
+    });
+  }
+
+  // Layout Hint Banner Dismiss
+  const layoutHintBanner = document.getElementById('layoutHintBanner');
+  const btnDismissLayoutHint = document.getElementById('btnDismissLayoutHint');
+  if (layoutHintBanner && btnDismissLayoutHint) {
+    if (localStorage.getItem(LAYOUT_HINT_DISMISSED_KEY) === 'true') {
+      layoutHintBanner.classList.add('hidden');
+    }
+    btnDismissLayoutHint.addEventListener('click', () => {
+      layoutHintBanner.classList.add('hidden');
+      try { localStorage.setItem(LAYOUT_HINT_DISMISSED_KEY, 'true'); } catch (e) {}
+    });
+  }
 
   // View mode toggles
   document.getElementById('viewGridBtn').addEventListener('click', () => setViewMode('grid'));
@@ -662,6 +687,7 @@ function initEventListeners() {
       closeQrModal();
       closeDeleteModal();
       closeCloudModal();
+      closeManageCategoryModal();
       if (state.currentUser) closeAuthModal();
       closeAdminModal();
       closeAdminPasswordModal();
@@ -720,6 +746,40 @@ function initEventListeners() {
       if (e.target.id === 'adminPasswordModal') closeAdminPasswordModal();
     });
   }
+
+  // Manage Categories Modal & Scroll Controls
+  const btnManageCats = document.getElementById('btnManageCategories');
+  if (btnManageCats) {
+    btnManageCats.addEventListener('click', openManageCategoryModal);
+  }
+  const btnCloseManageCat = document.getElementById('btnCloseManageCategoryModal');
+  if (btnCloseManageCat) {
+    btnCloseManageCat.addEventListener('click', closeManageCategoryModal);
+  }
+  const btnDoneManageCat = document.getElementById('btnDoneManageCategory');
+  if (btnDoneManageCat) {
+    btnDoneManageCat.addEventListener('click', closeManageCategoryModal);
+  }
+  const manageCatModal = document.getElementById('manageCategoryModal');
+  if (manageCatModal) {
+    manageCatModal.addEventListener('click', (e) => {
+      if (e.target.id === 'manageCategoryModal') closeManageCategoryModal();
+    });
+  }
+  const formAddCat = document.getElementById('formAddCategory');
+  if (formAddCat) {
+    formAddCat.addEventListener('submit', handleAddNewCategory);
+  }
+  const btnSortAlpha = document.getElementById('btnSortCategoriesAlpha');
+  if (btnSortAlpha) {
+    btnSortAlpha.addEventListener('click', sortCategoriesAlphabetically);
+  }
+  const btnAutoCat = document.getElementById('btnAutoCategorizeLinks');
+  if (btnAutoCat) {
+    btnAutoCat.addEventListener('click', autoCategorizeLinksFromTitles);
+  }
+
+  initCategoryScrollControls();
 }
 
 // ===================================================================
@@ -794,41 +854,899 @@ function renderStats() {
   document.getElementById('statFavoriteLinks').textContent = favorites;
 }
 
-// Render dynamic Category Tags
+// ===================================================================
+// CATEGORY MANAGEMENT & DYNAMIC DRAGGABLE TAGS
+// ===================================================================
+
+// Default SPPG Categories
+const DEFAULT_SPPG_CATEGORIES = [
+  'SPPG Utama',
+  'Laporan Keuangan',
+  'Operasional',
+  'Surat & Administrasi',
+  'Dokumentasi & Media',
+  'Master Data',
+  'SDM & Personalia',
+  'Arsip'
+];
+
+// Curated 12-color Vibrant Palette for Categories
+const CATEGORY_PALETTE = [
+  { name: 'Hijau Emerald', hex: '#10b981' },
+  { name: 'Merah Ruby', hex: '#ef4444' },
+  { name: 'Biru Safir', hex: '#2563eb' },
+  { name: 'Kuning Amber', hex: '#f59e0b' },
+  { name: 'Ungu Violet', hex: '#8b5cf6' },
+  { name: 'Oranye Sunset', hex: '#f97316' },
+  { name: 'Toska Teal', hex: '#06b6d4' },
+  { name: 'Merah Muda Pink', hex: '#ec4899' },
+  { name: 'Hijau Mint', hex: '#14b8a6' },
+  { name: 'Indigo Modern', hex: '#6366f1' },
+  { name: 'Hijau Lime', hex: '#84cc16' },
+  { name: 'Abu-abu Netral', hex: '#64748b' }
+];
+
+function getUserCategoryOrderKey(username) {
+  const safeUser = (username || 'admin').toLowerCase().trim();
+  return `sppg_category_order_${safeUser}`;
+}
+
+function getUserCustomCategoriesKey(username) {
+  const safeUser = (username || 'admin').toLowerCase().trim();
+  return `sppg_custom_categories_${safeUser}`;
+}
+
+function getUserCategoryColorsKey(username) {
+  const safeUser = (username || 'admin').toLowerCase().trim();
+  return `sppg_category_colors_${safeUser}`;
+}
+
+function getCategoryColor(catName) {
+  if (!catName) return '#2563eb';
+  const cleanName = catName.trim();
+  if (state.categoryColors && state.categoryColors[cleanName]) {
+    return state.categoryColors[cleanName];
+  }
+  // Deterministic color assignment based on category name
+  let hash = 0;
+  for (let i = 0; i < cleanName.length; i++) {
+    hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % CATEGORY_PALETTE.length;
+  return CATEGORY_PALETTE[index].hex;
+}
+
+function setCategoryColor(catName, color) {
+  if (!catName || !color) return;
+  const clean = catName.trim();
+  if (!state.categoryColors) state.categoryColors = {};
+  state.categoryColors[clean] = color;
+  saveCategoryData(true);
+  renderCategoryTags();
+  renderLinks();
+  renderCategoryManageList();
+  showToast(`Warna kategori "${clean}" berhasil diatur!`, 'success');
+}
+
+function loadCategoryData() {
+  if (!state.currentUser) {
+    state.categoryOrder = [...DEFAULT_SPPG_CATEGORIES];
+    state.customCategories = [];
+    state.categoryColors = {};
+    return;
+  }
+
+  const user = state.currentUser.username;
+  try {
+    const rawOrder = localStorage.getItem(getUserCategoryOrderKey(user));
+    if (rawOrder) {
+      const parsed = JSON.parse(rawOrder);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        state.categoryOrder = parsed;
+      } else {
+        state.categoryOrder = [...DEFAULT_SPPG_CATEGORIES];
+      }
+    } else {
+      state.categoryOrder = [...DEFAULT_SPPG_CATEGORIES];
+    }
+  } catch (e) {
+    state.categoryOrder = [...DEFAULT_SPPG_CATEGORIES];
+  }
+
+  try {
+    const rawCustom = localStorage.getItem(getUserCustomCategoriesKey(user));
+    if (rawCustom) {
+      const parsed = JSON.parse(rawCustom);
+      state.customCategories = Array.isArray(parsed) ? parsed : [];
+    } else {
+      state.customCategories = [];
+    }
+  } catch (e) {
+    state.customCategories = [];
+  }
+
+  try {
+    const rawColors = localStorage.getItem(getUserCategoryColorsKey(user));
+    if (rawColors) {
+      const parsed = JSON.parse(rawColors);
+      state.categoryColors = (parsed && typeof parsed === 'object') ? parsed : {};
+    } else {
+      state.categoryColors = {};
+    }
+  } catch (e) {
+    state.categoryColors = {};
+  }
+}
+
+function saveCategoryData(syncToCloud = true) {
+  if (!state.currentUser) return;
+  const user = state.currentUser.username;
+  try {
+    localStorage.setItem(getUserCategoryOrderKey(user), JSON.stringify(state.categoryOrder || []));
+    localStorage.setItem(getUserCustomCategoriesKey(user), JSON.stringify(state.customCategories || []));
+    localStorage.setItem(getUserCategoryColorsKey(user), JSON.stringify(state.categoryColors || {}));
+  } catch (e) {
+    console.error('Error saving category data:', e);
+  }
+
+  // Realtime Sync to Firebase if connected
+  if (syncToCloud && state.firebaseDb && state.cloudStatus === 'online' && user !== 'demo') {
+    try {
+      state.firebaseDb.ref(`sppg_multiusers/${user}/categoryOrder`).set(state.categoryOrder || []);
+
+      // Convert colors object to array of { name, color } so keys with '/' are supported
+      const colorArray = Object.keys(state.categoryColors || {}).map(k => ({
+        name: k,
+        color: state.categoryColors[k]
+      }));
+      state.firebaseDb.ref(`sppg_multiusers/${user}/categoryColors`).set(colorArray);
+    } catch (e) {
+      console.warn('Could not sync category data to cloud:', e);
+    }
+  }
+}
+
+// Get all active unique categories in user's custom sequence
+function getAllCategories() {
+  const set = new Set();
+
+  // 1. Categories present in actual links
+  if (Array.isArray(state.links)) {
+    state.links.forEach(l => {
+      const cat = (l.category || 'Umum').trim();
+      if (cat) set.add(cat);
+    });
+  }
+
+  // 2. Custom categories added by user
+  if (Array.isArray(state.customCategories)) {
+    state.customCategories.forEach(c => {
+      if (c && c.trim()) set.add(c.trim());
+    });
+  }
+
+  // 3. Ensure defaults exist if set is empty
+  DEFAULT_SPPG_CATEGORIES.forEach(c => set.add(c));
+
+  const allAvailable = Array.from(set);
+
+  // Reorder based on state.categoryOrder
+  const ordered = [];
+  const orderList = Array.isArray(state.categoryOrder) ? state.categoryOrder : [];
+
+  orderList.forEach(c => {
+    if (set.has(c) && !ordered.includes(c)) {
+      ordered.push(c);
+    }
+  });
+
+  // Remaining categories not yet in categoryOrder
+  const remaining = allAvailable.filter(c => !ordered.includes(c)).sort((a, b) => a.localeCompare(b, 'id'));
+  const finalCategories = [...ordered, ...remaining];
+
+  // Update datalist in form modal
+  updateCategoryPresetsDatalist(finalCategories);
+
+  return finalCategories;
+}
+
+function updateCategoryPresetsDatalist(categories) {
+  const datalist = document.getElementById('categoryPresets');
+  if (!datalist) return;
+  datalist.innerHTML = categories.map(cat => `<option value="${escapeHtml(cat)}">`).join('');
+}
+
+// Render dynamic Category Tags with Drag-and-Drop Reorder and Drag-to-move-link
 function renderCategoryTags() {
   const container = document.getElementById('tagsContainer');
-  const categoryCounts = {};
+  if (!container) return;
 
+  const categoryCounts = {};
   state.links.forEach(l => {
     const cat = (l.category || 'Umum').trim();
     categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
   });
 
-  const categories = Object.keys(categoryCounts).sort();
+  const categories = getAllCategories();
 
   let html = `
-    <button class="tag-filter-chip ${state.selectedTag === 'all' ? 'active' : ''}" data-tag="all">
+    <button class="tag-filter-chip ${state.selectedTag === 'all' ? 'active' : ''}" data-tag="all" title="Tampilkan semua link">
       Semua (${state.links.length})
     </button>
   `;
 
   categories.forEach(cat => {
     const isActive = state.selectedTag === cat;
+    const count = categoryCounts[cat] || 0;
+    const catColor = getCategoryColor(cat);
     html += `
-      <button class="tag-filter-chip ${isActive ? 'active' : ''}" data-tag="${escapeHtml(cat)}">
-        ${escapeHtml(cat)} (${categoryCounts[cat]})
+      <button 
+        class="tag-filter-chip ${isActive ? 'active' : ''}" 
+        data-tag="${escapeHtml(cat)}" 
+        draggable="true" 
+        style="--tag-color: ${catColor};"
+        title="Klik untuk filter, tahan & geser untuk mengubah urutan"
+      >
+        <span class="tag-drag-handle" title="Tarik untuk menggeser posisi">⋮⋮</span>
+        <span class="tag-color-dot" style="background-color: ${catColor};" title="Warna Kategori: ${escapeHtml(cat)}"></span>
+        <span class="tag-label-text">${escapeHtml(cat)}</span>
+        <span class="tag-count">(${count})</span>
       </button>
     `;
   });
 
   container.innerHTML = html;
 
+  // Click & Drag Events on Category Chips
   container.querySelectorAll('.tag-filter-chip').forEach(chip => {
+    const tag = chip.getAttribute('data-tag');
+
+    // Filter click
     chip.addEventListener('click', () => {
-      state.selectedTag = chip.getAttribute('data-tag');
+      state.selectedTag = tag;
       renderApp();
     });
+
+    if (tag === 'all') return; // 'Semua' button is pinned at start
+
+    // Drag Category Chip to Reorder
+    chip.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/category-drag', tag);
+      e.dataTransfer.effectAllowed = 'move';
+      chip.classList.add('is-dragging');
+    });
+
+    chip.addEventListener('dragend', () => {
+      chip.classList.remove('is-dragging');
+      container.querySelectorAll('.tag-filter-chip').forEach(c => {
+        c.classList.remove('drag-over');
+        c.classList.remove('drop-target-active');
+      });
+    });
+
+    chip.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.types.includes('text/category-drag')) {
+        e.dataTransfer.dropEffect = 'move';
+        chip.classList.add('drag-over');
+      } else if (e.dataTransfer.types.includes('text/link-id')) {
+        e.dataTransfer.dropEffect = 'copy';
+        chip.classList.add('drop-target-active');
+      }
+    });
+
+    chip.addEventListener('dragleave', () => {
+      chip.classList.remove('drag-over');
+      chip.classList.remove('drop-target-active');
+    });
+
+    chip.addEventListener('drop', (e) => {
+      e.preventDefault();
+      chip.classList.remove('drag-over');
+      chip.classList.remove('drop-target-active');
+
+      // Case 1: Geser urutan kategori (Reorder Categories)
+      if (e.dataTransfer.types.includes('text/category-drag')) {
+        const sourceCat = e.dataTransfer.getData('text/category-drag');
+        const targetCat = tag;
+        if (sourceCat && targetCat && sourceCat !== targetCat) {
+          reorderCategory(sourceCat, targetCat);
+        }
+      }
+      // Case 2: Geser Link Card ke Kategori ini (Move Link to Category)
+      else if (e.dataTransfer.types.includes('text/link-id')) {
+        const linkId = e.dataTransfer.getData('text/link-id');
+        if (linkId) {
+          moveLinkToCategory(linkId, tag);
+        }
+      }
+    });
   });
+
+  updateCategoryScrollButtons();
+}
+
+function reorderCategory(sourceCat, targetCat) {
+  let categories = [...getAllCategories()];
+  const fromIndex = categories.indexOf(sourceCat);
+  const toIndex = categories.indexOf(targetCat);
+
+  if (fromIndex < 0 || toIndex < 0) return;
+
+  // Move source to target position
+  categories.splice(fromIndex, 1);
+  categories.splice(toIndex, 0, sourceCat);
+
+  state.categoryOrder = categories;
+  saveCategoryData();
+  renderCategoryTags();
+  showToast(`Urutan kategori berhasil diubah: "${sourceCat}" digeser.`, 'success');
+}
+
+function moveLinkToCategory(linkId, newCategory) {
+  const link = state.links.find(l => l.id === linkId);
+  if (!link) return;
+
+  const oldCategory = link.category || 'Umum';
+  if (oldCategory === newCategory) {
+    showToast(`Link sudah berada di kategori "${newCategory}".`, 'info');
+    return;
+  }
+
+  link.category = newCategory;
+  link.updatedAt = new Date().toISOString();
+  saveToStorage();
+  syncLinkPatchToCloud(linkId, { category: newCategory, updatedAt: link.updatedAt });
+  renderApp();
+  showToast(`Kategori link "${truncate(link.title, 26)}" berhasil diubah ke "${newCategory}"!`, 'success');
+}
+
+// Horizontal Scroll Controls
+function updateCategoryScrollButtons() {
+  const container = document.getElementById('tagsContainer');
+  const btnLeft = document.getElementById('btnScrollTagsLeft');
+  const btnRight = document.getElementById('btnScrollTagsRight');
+  if (!container || !btnLeft || !btnRight) return;
+
+  const hasOverflow = container.scrollWidth > container.clientWidth + 5;
+  if (!hasOverflow) {
+    btnLeft.classList.add('hidden');
+    btnRight.classList.add('hidden');
+    return;
+  }
+
+  if (container.scrollLeft > 10) {
+    btnLeft.classList.remove('hidden');
+  } else {
+    btnLeft.classList.add('hidden');
+  }
+
+  if (container.scrollLeft < container.scrollWidth - container.clientWidth - 10) {
+    btnRight.classList.remove('hidden');
+  } else {
+    btnRight.classList.add('hidden');
+  }
+}
+
+function initCategoryScrollControls() {
+  const container = document.getElementById('tagsContainer');
+  const btnLeft = document.getElementById('btnScrollTagsLeft');
+  const btnRight = document.getElementById('btnScrollTagsRight');
+  if (!container) return;
+
+  if (btnLeft) {
+    btnLeft.addEventListener('click', () => {
+      container.scrollBy({ left: -220, behavior: 'smooth' });
+    });
+  }
+
+  if (btnRight) {
+    btnRight.addEventListener('click', () => {
+      container.scrollBy({ left: 220, behavior: 'smooth' });
+    });
+  }
+
+  container.addEventListener('scroll', () => {
+    updateCategoryScrollButtons();
+  });
+
+  // Mouse Drag / Pan to scroll sideways on desktop
+  let isDown = false;
+  let startX;
+  let scrollLeft;
+
+  container.addEventListener('mousedown', (e) => {
+    // Only pan if not clicking directly on a button's drag handle or text input
+    if (e.target.closest('.tag-drag-handle')) return;
+    isDown = true;
+    container.classList.add('is-panning');
+    startX = e.pageX - container.offsetLeft;
+    scrollLeft = container.scrollLeft;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDown) {
+      isDown = false;
+      container.classList.remove('is-panning');
+    }
+  });
+
+  container.addEventListener('mousemove', (e) => {
+    if (!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - container.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    container.scrollLeft = scrollLeft - walk;
+  });
+
+  window.addEventListener('resize', () => {
+    updateCategoryScrollButtons();
+  });
+}
+
+// Modal Kelola Kategori
+function openManageCategoryModal() {
+  const modal = document.getElementById('manageCategoryModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  renderCategoryManageList();
+  const input = document.getElementById('newCategoryInput');
+  if (input) input.value = '';
+}
+
+function closeManageCategoryModal() {
+  const modal = document.getElementById('manageCategoryModal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  renderCategoryTags();
+}
+
+function renderCategoryManageList() {
+  const listContainer = document.getElementById('categoryManageList');
+  const countEl = document.getElementById('totalCategoriesCount');
+  if (!listContainer) return;
+
+  const categories = getAllCategories();
+  if (countEl) countEl.textContent = categories.length;
+
+  const categoryCounts = {};
+  state.links.forEach(l => {
+    const cat = (l.category || 'Umum').trim();
+    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+  });
+
+  if (categories.length === 0) {
+    listContainer.innerHTML = `<div class="empty-state-text" style="text-align: center; padding: 1.5rem; color: var(--text-muted);">Belum ada kategori yang tersedia.</div>`;
+    return;
+  }
+
+  listContainer.innerHTML = categories.map((cat, idx) => {
+    const count = categoryCounts[cat] || 0;
+    const isFirst = idx === 0;
+    const isLast = idx === categories.length - 1;
+    const catColor = getCategoryColor(cat);
+
+    return `
+      <div class="cat-manage-item" data-cat="${escapeHtml(cat)}" data-index="${idx}" draggable="true">
+        <div class="cat-manage-left">
+          <span class="cat-drag-handle" title="Tarik ke atas atau ke bawah untuk menggeser posisi">⋮⋮</span>
+          
+          <div class="cat-color-badge-wrap">
+            <button 
+              type="button" 
+              class="btn-cat-color-swatch" 
+              data-cat="${escapeHtml(cat)}" 
+              style="background-color: ${catColor};" 
+              title="Klik untuk memilih warna kategori (Kajoran, Ngadiharjo, dll)"
+            ></button>
+          </div>
+
+          <span class="cat-name-badge">${escapeHtml(cat)}</span>
+          <span class="cat-count-badge">${count} link</span>
+        </div>
+        <div class="cat-manage-right">
+          <button type="button" class="btn-cat-order btn-move-cat-up" data-cat="${escapeHtml(cat)}" ${isFirst ? 'disabled' : ''} title="Geser ke Atas (ke Kiri)">
+            ⬆️
+          </button>
+          <button type="button" class="btn-cat-order btn-move-cat-down" data-cat="${escapeHtml(cat)}" ${isLast ? 'disabled' : ''} title="Geser ke Bawah (ke Kanan)">
+            ⬇️
+          </button>
+          <button type="button" class="btn-cat-action btn-edit-cat-name" data-cat="${escapeHtml(cat)}" title="Ubah Nama Kategori">
+            ✏️
+          </button>
+          <button type="button" class="btn-cat-action btn-cat-delete text-danger" data-cat="${escapeHtml(cat)}" data-count="${count}" title="Hapus Kategori">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Attach buttons inside modal
+  listContainer.querySelectorAll('.btn-cat-color-swatch').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cat = btn.getAttribute('data-cat');
+      openColorPickerPopover(btn, cat);
+    });
+  });
+
+  listContainer.querySelectorAll('.btn-move-cat-up').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.getAttribute('data-cat');
+      moveCategoryStep(cat, -1);
+    });
+  });
+
+  listContainer.querySelectorAll('.btn-move-cat-down').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.getAttribute('data-cat');
+      moveCategoryStep(cat, 1);
+    });
+  });
+
+  listContainer.querySelectorAll('.btn-edit-cat-name').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.getAttribute('data-cat');
+      startInlineCategoryEdit(cat);
+    });
+  });
+
+  listContainer.querySelectorAll('.btn-cat-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cat = btn.getAttribute('data-cat');
+      const count = parseInt(btn.getAttribute('data-count') || '0', 10);
+      deleteCategory(cat, count);
+    });
+  });
+
+  initModalListDragReorder(listContainer);
+}
+
+function moveCategoryStep(cat, step) {
+  const categories = [...getAllCategories()];
+  const idx = categories.indexOf(cat);
+  if (idx < 0) return;
+  const newIdx = idx + step;
+  if (newIdx < 0 || newIdx >= categories.length) return;
+
+  categories.splice(idx, 1);
+  categories.splice(newIdx, 0, cat);
+
+  state.categoryOrder = categories;
+  saveCategoryData();
+  renderCategoryManageList();
+  renderCategoryTags();
+}
+
+function startInlineCategoryEdit(cat) {
+  const item = document.querySelector(`.cat-manage-item[data-cat="${CSS.escape(cat)}"]`);
+  if (!item) return;
+
+  item.innerHTML = `
+    <form class="cat-manage-edit-row" onsubmit="return false;">
+      <input type="text" class="form-control form-control-sm input-edit-cat" value="${escapeHtml(cat)}" maxlength="40" required>
+      <button type="button" class="btn btn-sm btn-primary btn-save-cat-edit">Simpan</button>
+      <button type="button" class="btn btn-sm btn-secondary btn-cancel-cat-edit">Batal</button>
+    </form>
+  `;
+
+  const input = item.querySelector('.input-edit-cat');
+  input.focus();
+  input.select();
+
+  const handleSave = () => {
+    const newName = input.value.trim();
+    if (!newName) {
+      showToast('Nama kategori tidak boleh kosong.', 'warning');
+      return;
+    }
+    if (newName === cat) {
+      renderCategoryManageList();
+      return;
+    }
+    renameCategory(cat, newName);
+  };
+
+  item.querySelector('.btn-save-cat-edit').addEventListener('click', handleSave);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      renderCategoryManageList();
+    }
+  });
+
+  item.querySelector('.btn-cancel-cat-edit').addEventListener('click', () => {
+    renderCategoryManageList();
+  });
+}
+
+function renameCategory(oldName, newName) {
+  let affectedLinks = 0;
+  state.links.forEach(l => {
+    if ((l.category || '').trim() === oldName) {
+      l.category = newName;
+      l.updatedAt = new Date().toISOString();
+      affectedLinks++;
+    }
+  });
+
+  if (Array.isArray(state.categoryOrder)) {
+    const orderIdx = state.categoryOrder.indexOf(oldName);
+    if (orderIdx >= 0) {
+      state.categoryOrder[orderIdx] = newName;
+    } else {
+      state.categoryOrder.push(newName);
+    }
+  }
+
+  if (Array.isArray(state.customCategories)) {
+    const cIdx = state.customCategories.indexOf(oldName);
+    if (cIdx >= 0) {
+      state.customCategories[cIdx] = newName;
+    } else {
+      state.customCategories.push(newName);
+    }
+  }
+
+  if (state.selectedTag === oldName) {
+    state.selectedTag = newName;
+  }
+
+  // Transfer color to new name
+  if (state.categoryColors && state.categoryColors[oldName]) {
+    state.categoryColors[newName] = state.categoryColors[oldName];
+    delete state.categoryColors[oldName];
+  }
+
+  saveToStorage();
+  saveCategoryData();
+  uploadLinksToCloud(false);
+  renderCategoryManageList();
+  renderApp();
+  showToast(`Kategori "${oldName}" diubah menjadi "${newName}" (${affectedLinks} link diperbarui).`, 'success');
+}
+
+function deleteCategory(cat, count) {
+  let confirmMsg = `Yakin ingin menghapus kategori "${cat}"?`;
+  if (count > 0) {
+    confirmMsg = `Kategori "${cat}" digunakan oleh ${count} link. Jika dihapus, link akan dialihkan ke kategori "Umum". Lanjutkan?`;
+  }
+
+  if (!confirm(confirmMsg)) return;
+
+  if (count > 0) {
+    state.links.forEach(l => {
+      if ((l.category || '').trim() === cat) {
+        l.category = 'Umum';
+        l.updatedAt = new Date().toISOString();
+      }
+    });
+    saveToStorage();
+    uploadLinksToCloud(false);
+  }
+
+  state.categoryOrder = (state.categoryOrder || []).filter(c => c !== cat);
+  state.customCategories = (state.customCategories || []).filter(c => c !== cat);
+
+  if (state.categoryColors && state.categoryColors[cat]) {
+    delete state.categoryColors[cat];
+  }
+
+  if (state.selectedTag === cat) {
+    state.selectedTag = 'all';
+  }
+
+  saveCategoryData();
+  renderCategoryManageList();
+  renderApp();
+  showToast(`Kategori "${cat}" berhasil dihapus.`, 'info');
+}
+
+function initModalListDragReorder(listContainer) {
+  let draggedItem = null;
+
+  listContainer.querySelectorAll('.cat-manage-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      draggedItem = item;
+      e.dataTransfer.effectAllowed = 'move';
+      item.classList.add('cat-item-dragging');
+    });
+
+    item.addEventListener('dragend', () => {
+      if (draggedItem) draggedItem.classList.remove('cat-item-dragging');
+      listContainer.querySelectorAll('.cat-manage-item').forEach(i => i.classList.remove('cat-item-drag-over'));
+      draggedItem = null;
+    });
+
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!draggedItem || draggedItem === item) return;
+      e.dataTransfer.dropEffect = 'move';
+      item.classList.add('cat-item-drag-over');
+    });
+
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('cat-item-drag-over');
+    });
+
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('cat-item-drag-over');
+      if (!draggedItem || draggedItem === item) return;
+
+      const sourceCat = draggedItem.getAttribute('data-cat');
+      const targetCat = item.getAttribute('data-cat');
+      if (sourceCat && targetCat && sourceCat !== targetCat) {
+        reorderCategory(sourceCat, targetCat);
+        renderCategoryManageList();
+      }
+    });
+  });
+}
+
+function handleAddNewCategory(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById('newCategoryInput');
+  if (!input) return;
+
+  const newCat = input.value.trim();
+  if (!newCat) {
+    showToast('Silakan ketik nama kategori baru.', 'warning');
+    input.focus();
+    return;
+  }
+
+  const existing = getAllCategories();
+  const duplicate = existing.find(c => c.toLowerCase() === newCat.toLowerCase());
+  if (duplicate) {
+    showToast(`Kategori "${duplicate}" sudah ada.`, 'warning');
+    input.focus();
+    return;
+  }
+
+  if (!Array.isArray(state.categoryOrder)) state.categoryOrder = [];
+  if (!Array.isArray(state.customCategories)) state.customCategories = [];
+
+  const colorInput = document.getElementById('newCategoryColor');
+  const pickedColor = colorInput ? colorInput.value : getCategoryColor(newCat);
+
+  state.categoryOrder.push(newCat);
+  state.customCategories.push(newCat);
+  if (!state.categoryColors) state.categoryColors = {};
+  state.categoryColors[newCat] = pickedColor;
+
+  saveCategoryData(true);
+  input.value = '';
+  renderCategoryManageList();
+  renderCategoryTags();
+  showToast(`Kategori "${newCat}" berhasil ditambahkan!`, 'success');
+}
+
+function openColorPickerPopover(anchorBtn, cat) {
+  // Remove existing popover if any
+  document.querySelectorAll('.cat-color-popover').forEach(p => p.remove());
+
+  const currentColor = getCategoryColor(cat);
+  const popover = document.createElement('div');
+  popover.className = 'cat-color-popover';
+
+  let paletteHtml = CATEGORY_PALETTE.map(p => `
+    <button 
+      type="button" 
+      class="palette-swatch-btn ${p.hex.toLowerCase() === currentColor.toLowerCase() ? 'is-selected' : ''}" 
+      data-color="${p.hex}" 
+      style="background-color: ${p.hex};" 
+      title="${p.name}"
+    ></button>
+  `).join('');
+
+  popover.innerHTML = `
+    <div class="color-palette-title">Warna: ${escapeHtml(cat)}</div>
+    <div class="color-palette-grid">
+      ${paletteHtml}
+    </div>
+    <label class="palette-custom-row">
+      <input type="color" class="palette-custom-input" value="${currentColor}">
+      <span>Warna Lainnya...</span>
+    </label>
+  `;
+
+  anchorBtn.parentElement.appendChild(popover);
+
+  popover.querySelectorAll('.palette-swatch-btn').forEach(swBtn => {
+    swBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const chosenColor = swBtn.getAttribute('data-color');
+      setCategoryColor(cat, chosenColor);
+      popover.remove();
+    });
+  });
+
+  const customInput = popover.querySelector('.palette-custom-input');
+  customInput.addEventListener('input', (e) => {
+    setCategoryColor(cat, e.target.value);
+  });
+  customInput.addEventListener('change', () => {
+    popover.remove();
+  });
+
+  // Close when clicking outside
+  const handleOutsideClick = (e) => {
+    if (!popover.contains(e.target) && e.target !== anchorBtn) {
+      popover.remove();
+      document.removeEventListener('click', handleOutsideClick);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', handleOutsideClick), 10);
+}
+
+function autoCategorizeLinksFromTitles() {
+  if (!state.links || state.links.length === 0) {
+    showToast('Tidak ada link untuk dikategorikan.', 'info');
+    return;
+  }
+
+  // Pre-configured recognized regions and their default theme colors
+  const REGION_KEYWORDS = [
+    { keyword: 'KAJORAN', category: 'KAJORAN', color: '#10b981' }, // Hijau Emerald
+    { keyword: 'NGADIHARJO', category: 'NGADIHARJO', color: '#ef4444' }, // Merah Ruby
+    { keyword: 'MENOREH', category: 'MENOREH/KALISALAK', color: '#2563eb' }, // Biru Safir
+    { keyword: 'KALISALAK', category: 'MENOREH/KALISALAK', color: '#2563eb' },
+    { keyword: 'BESERAN', category: 'BESERAN', color: '#f59e0b' }, // Kuning Amber
+    { keyword: 'DAPUR', category: 'DAPUR HARIAN', color: '#8b5cf6' }, // Ungu Violet
+    { keyword: 'SEWA DAPUR', category: 'DAPUR HARIAN', color: '#8b5cf6' }
+  ];
+
+  let changedCount = 0;
+  state.links.forEach(link => {
+    const title = (link.title || '').toUpperCase();
+    for (const item of REGION_KEYWORDS) {
+      if (title.includes(item.keyword)) {
+        if (link.category !== item.category) {
+          link.category = item.category;
+          link.updatedAt = new Date().toISOString();
+          changedCount++;
+        }
+        if (!state.categoryColors[item.category]) {
+          state.categoryColors[item.category] = item.color;
+        }
+        if (!state.categoryOrder.includes(item.category)) {
+          state.categoryOrder.push(item.category);
+        }
+        if (!state.customCategories.includes(item.category)) {
+          state.customCategories.push(item.category);
+        }
+        break;
+      }
+    }
+  });
+
+  if (changedCount === 0) {
+    showToast('Semua link sudah sesuai dengan kategori wilayahnya.', 'info');
+    return;
+  }
+
+  saveToStorage();
+  saveCategoryData(true);
+  uploadLinksToCloud(false);
+  renderCategoryManageList();
+  renderApp();
+  showToast(`Berhasil! ${changedCount} link otomatis dikelompokkan ke kategori wilayah (Kajoran, Ngadiharjo, dll)!`, 'success');
+}
+
+function sortCategoriesAlphabetically() {
+  const current = [...getAllCategories()];
+  current.sort((a, b) => a.localeCompare(b, 'id'));
+  state.categoryOrder = current;
+  saveCategoryData();
+  renderCategoryManageList();
+  renderCategoryTags();
+  showToast('Urutan kategori direset ke alfabetik (A-Z).', 'info');
 }
 
 // Filter, Sort, and Render Links List
@@ -861,6 +1779,32 @@ function getFilteredAndSortedLinks() {
 
   // 4. Sorting
   list.sort((a, b) => {
+    // 1. Custom Free Layout: Respect user manual order
+    if (state.sortBy === 'custom') {
+      const ordA = (typeof a.order === 'number') ? a.order : 999999;
+      const ordB = (typeof b.order === 'number') ? b.order : 999999;
+      if (ordA !== ordB) return ordA - ordB;
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    }
+
+    // 2. Group by Category / Wilayah: Cards of same category cluster side-by-side
+    if (state.sortBy === 'category') {
+      const catList = getAllCategories();
+      const catA = (a.category || 'Umum').trim();
+      const catB = (b.category || 'Umum').trim();
+      const idxA = catList.indexOf(catA);
+      const idxB = catList.indexOf(catB);
+      const posA = idxA === -1 ? 9999 : idxA;
+      const posB = idxB === -1 ? 9999 : idxB;
+      if (posA !== posB) return posA - posB;
+
+      // Within same category, maintain custom order or title
+      const ordA = (typeof a.order === 'number') ? a.order : 999999;
+      const ordB = (typeof b.order === 'number') ? b.order : 999999;
+      if (ordA !== ordB) return ordA - ordB;
+      return a.title.localeCompare(b.title, 'id', { sensitivity: 'base' });
+    }
+
     // Favorites always pinned to top if sort is by newest or oldest
     if (a.favorite !== b.favorite && (state.sortBy === 'newest' || state.sortBy === 'oldest')) {
       return a.favorite ? -1 : 1;
@@ -947,6 +1891,23 @@ function renderLinks() {
     });
   });
 
+  // Card Nudge Buttons (◀ / ▶)
+  container.querySelectorAll('.btn-nudge-prev').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      nudgeCardPosition(id, -1);
+    });
+  });
+
+  container.querySelectorAll('.btn-nudge-next').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      nudgeCardPosition(id, 1);
+    });
+  });
+
   container.querySelectorAll('.btn-edit-link').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -962,32 +1923,151 @@ function renderLinks() {
       openDeleteModal(id);
     });
   });
+
+  // Card Drag-and-Drop (Reorder cards directly on the grid & drag to category chips)
+  let activeDraggedCardId = null;
+
+  container.querySelectorAll('.link-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      // Don't drag card if user is clicking interactive buttons or links
+      if (['BUTTON', 'A', 'INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.closest('button') || e.target.closest('a')) {
+        e.preventDefault();
+        return;
+      }
+      const id = card.getAttribute('data-card-id');
+      activeDraggedCardId = id;
+      const title = card.querySelector('.card-title')?.textContent || 'Link Drive';
+      e.dataTransfer.setData('text/card-drag', id);
+      e.dataTransfer.setData('text/link-id', id);
+      e.dataTransfer.setData('text/plain', title);
+      e.dataTransfer.effectAllowed = 'copyMove';
+      card.classList.add('card-is-dragging');
+    });
+
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const draggedId = activeDraggedCardId || e.dataTransfer.getData('text/card-drag') || e.dataTransfer.getData('text/link-id');
+      const targetId = card.getAttribute('data-card-id');
+      if (!draggedId || draggedId === targetId) return;
+
+      e.dataTransfer.dropEffect = 'move';
+      const rect = card.getBoundingClientRect();
+      const isList = state.viewMode === 'list';
+      let placeAfter = false;
+
+      if (isList) {
+        placeAfter = e.clientY > (rect.top + rect.height / 2);
+      } else {
+        if (e.clientY > rect.top + rect.height * 0.7) {
+          placeAfter = true;
+        } else if (e.clientY < rect.top + rect.height * 0.3) {
+          placeAfter = false;
+        } else {
+          placeAfter = e.clientX > (rect.left + rect.width / 2);
+        }
+      }
+
+      if (placeAfter) {
+        card.classList.add('drop-target-after');
+        card.classList.remove('drop-target-before');
+      } else {
+        card.classList.add('drop-target-before');
+        card.classList.remove('drop-target-after');
+      }
+    });
+
+    card.addEventListener('dragleave', (e) => {
+      if (!card.contains(e.relatedTarget)) {
+        card.classList.remove('drop-target-before', 'drop-target-after');
+      }
+    });
+
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const placeAfter = card.classList.contains('drop-target-after');
+      card.classList.remove('drop-target-before', 'drop-target-after');
+
+      const sourceId = activeDraggedCardId || e.dataTransfer.getData('text/card-drag') || e.dataTransfer.getData('text/link-id');
+      const targetId = card.getAttribute('data-card-id');
+
+      if (!sourceId || !targetId || sourceId === targetId) return;
+      reorderCardToPosition(sourceId, targetId, placeAfter);
+    });
+
+    card.addEventListener('dragend', () => {
+      activeDraggedCardId = null;
+      card.classList.remove('card-is-dragging');
+      container.querySelectorAll('.link-card').forEach(c => {
+        c.classList.remove('drop-target-before', 'drop-target-after');
+      });
+      document.querySelectorAll('.tag-filter-chip').forEach(c => {
+        c.classList.remove('drop-target-active');
+      });
+    });
+  });
 }
 
 function renderLinkCard(link) {
   const type = link.type || 'file';
   const typeIcon = ICONS[type] || ICONS.file;
   const typeName = TYPE_NAMES[type] || 'File';
-  const accentColor = TYPE_COLORS[type] || 'var(--brand-blue)';
+  const category = (link.category || 'Umum').trim();
+  const catColor = getCategoryColor(category);
   const isFavorite = !!link.favorite;
-  const category = link.category || 'Umum';
   const clicks = link.clicks || 0;
   const ownerBadge = (isAdminUser() && link.ownerUsername)
     ? `<span class="badge-owner" title="Pemilik Link">👤 @${escapeHtml(link.ownerUsername)}</span>`
     : '';
 
   return `
-    <article class="link-card ${isFavorite ? 'is-favorite' : ''}" style="--card-accent: ${accentColor};" data-card-id="${link.id}">
+    <article 
+      class="link-card ${isFavorite ? 'is-favorite' : ''}" 
+      style="--card-accent: ${catColor};" 
+      data-card-id="${link.id}" 
+      draggable="true" 
+      title="Tahan & geser untuk mengatur tata letak kartu berdampingan, atau tarik ke tag kategori di atas"
+    >
       
-      <!-- Card Top: Badge & Quick Action -->
+      <!-- Card Top: Badge, Drag Handle & Quick Actions -->
       <div class="card-top">
-        <span class="card-type-badge badge-${type}">
-          ${typeIcon}
-          <span>${typeName}</span>
-        </span>
+        <div class="card-top-left">
+          <span class="card-drag-handle" title="Tahan & geser untuk memindahkan posisi kartu" aria-label="Geser posisi kartu">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <circle cx="9" cy="5" r="1.5"></circle>
+              <circle cx="15" cy="5" r="1.5"></circle>
+              <circle cx="9" cy="12" r="1.5"></circle>
+              <circle cx="15" cy="12" r="1.5"></circle>
+              <circle cx="9" cy="19" r="1.5"></circle>
+              <circle cx="15" cy="19" r="1.5"></circle>
+            </svg>
+          </span>
+          <span class="card-type-badge badge-${type}">
+            ${typeIcon}
+            <span>${typeName}</span>
+          </span>
+        </div>
         ${ownerBadge}
 
         <div class="card-top-actions">
+          <div class="card-nudge-group" title="Geser posisi kartu">
+            <button 
+              type="button" 
+              class="btn-card-nudge btn-nudge-prev" 
+              data-id="${link.id}" 
+              title="Geser 1 posisi ke kiri/sebelumnya"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <button 
+              type="button" 
+              class="btn-card-nudge btn-nudge-next" 
+              data-id="${link.id}" 
+              title="Geser 1 posisi ke kanan/berikutnya"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+          </div>
+
           <button 
             type="button" 
             class="btn-star-fav ${isFavorite ? 'active' : ''}" 
@@ -1001,7 +2081,10 @@ function renderLinkCard(link) {
 
       <!-- Card Body -->
       <div class="card-body">
-        <span class="card-category-tag">${escapeHtml(category)}</span>
+        <span class="card-category-tag" style="--cat-tag-color: ${catColor}; background: color-mix(in srgb, ${catColor} 14%, transparent); color: ${catColor}; border: 1px solid color-mix(in srgb, ${catColor} 30%, transparent);">
+          <span class="cat-badge-dot" style="background-color: ${catColor};"></span>
+          ${escapeHtml(category)}
+        </span>
         <h3 class="card-title">${escapeHtml(link.title)}</h3>
         
         ${link.description ? `<p class="card-desc">${escapeHtml(link.description)}</p>` : ''}
@@ -1285,10 +2368,12 @@ function handleFormSubmit(e) {
       description,
       favorite,
       clicks: 0,
+      order: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     state.links.unshift(newLink);
+    state.links.forEach((l, idx) => { l.order = idx; });
     syncLinkSaveToCloud(newLink);
     showToast('Link Google Drive baru berhasil disimpan!', 'success');
   }
@@ -1533,6 +2618,81 @@ function setViewMode(mode, save = true) {
   }
 }
 
+function loadSortPreference() {
+  const saved = localStorage.getItem(SORT_STORAGE_KEY) || 'custom';
+  state.sortBy = saved;
+  const sortSelect = document.getElementById('sortSelect');
+  if (sortSelect) sortSelect.value = saved;
+}
+
+function saveSortPreference(val) {
+  try {
+    localStorage.setItem(SORT_STORAGE_KEY, val);
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+// Reorder card to a new position relative to target card
+function reorderCardToPosition(sourceId, targetId, placeAfter) {
+  if (!Array.isArray(state.links) || state.links.length < 2) return;
+
+  const currentViewLinks = getFilteredAndSortedLinks();
+  const sourceInView = currentViewLinks.find(l => l.id === sourceId);
+  const targetInView = currentViewLinks.find(l => l.id === targetId);
+
+  if (!sourceInView || !targetInView) return;
+
+  const sourceIdx = state.links.findIndex(l => l.id === sourceId);
+  if (sourceIdx === -1) return;
+  const [movedItem] = state.links.splice(sourceIdx, 1);
+
+  const targetIdx = state.links.findIndex(l => l.id === targetId);
+  if (targetIdx === -1) {
+    state.links.splice(sourceIdx, 0, movedItem);
+    return;
+  }
+
+  const insertIdx = placeAfter ? targetIdx + 1 : targetIdx;
+  state.links.splice(insertIdx, 0, movedItem);
+
+  // Normalize sequential order numbers
+  state.links.forEach((l, idx) => {
+    l.order = idx;
+    l.updatedAt = new Date().toISOString();
+  });
+
+  // Switch to custom sort so custom layout is immediately active
+  state.sortBy = 'custom';
+  saveSortPreference('custom');
+  const sortSelect = document.getElementById('sortSelect');
+  if (sortSelect) sortSelect.value = 'custom';
+
+  saveToStorage();
+  uploadLinksToCloud(false);
+  renderApp();
+
+  showToast(`Tata letak diatur: "${truncate(movedItem.title, 22)}" ${placeAfter ? 'setelah' : 'sebelum'} "${truncate(targetInView.title, 18)}"`, 'success');
+}
+
+// Nudge card position one step earlier (-1) or later (+1)
+function nudgeCardPosition(id, offset) {
+  if (!Array.isArray(state.links) || state.links.length < 2) return;
+
+  const currentViewLinks = getFilteredAndSortedLinks();
+  const viewIndex = currentViewLinks.findIndex(l => l.id === id);
+  if (viewIndex === -1) return;
+
+  const targetViewIndex = viewIndex + offset;
+  if (targetViewIndex < 0 || targetViewIndex >= currentViewLinks.length) {
+    showToast(offset < 0 ? 'Kartu sudah berada di posisi paling awal.' : 'Kartu sudah berada di posisi paling akhir.', 'info');
+    return;
+  }
+
+  const targetItem = currentViewLinks[targetViewIndex];
+  reorderCardToPosition(id, targetItem.id, offset > 0);
+}
+
 // ===================================================================
 // TOAST NOTIFICATIONS SYSTEM
 // ===================================================================
@@ -1634,6 +2794,23 @@ function initFirebaseSync() {
       if (isOnline) {
         state.cloudStatus = 'online';
         updateCloudStatusUI('online', 'Online (5+ User)', 'Terhubung ke Firebase Realtime Database. Semua perubahan akan langsung sinkron otomatis ke seluruh perangkat.');
+
+        // Sinkronisasi daftar akun dari Cloud agar akun seperti rofiq otomatis tersedia
+        state.firebaseDb.ref('sppg_accounts').once('value').then(s => {
+          const accs = s.val();
+          if (accs) {
+            const remoteList = Object.values(accs);
+            const local = getRegisteredAccounts();
+            remoteList.forEach(r => {
+              if (r && r.username) {
+                const idx = local.findIndex(l => l.username.toLowerCase() === r.username.toLowerCase());
+                if (idx >= 0) local[idx] = { ...local[idx], ...r };
+                else local.push(r);
+              }
+            });
+            saveRegisteredAccounts(local);
+          }
+        }).catch(e => console.warn('Sync accounts error:', e));
       } else {
         state.cloudStatus = 'offline';
         updateCloudStatusUI('offline', 'Sync Cloud (Offline)', 'Koneksi terputus. Menunggu jaringan tersambung kembali...');
@@ -1651,15 +2828,44 @@ function initFirebaseSync() {
     }
 
     // Pasang listener real-time KHUSUS untuk akun pengguna saat ini
-    const userPath = 'sppg_multiusers/' + state.currentUser.username + '/links';
+    const userPath = 'sppg_multiusers/' + state.currentUser.username;
     state.firebaseUserLinksRef = state.firebaseDb.ref(userPath);
 
     state.firebaseUserLinksRef.on('value', (snapshot) => {
       const val = snapshot.val();
       if (val) {
-        const remoteList = Array.isArray(val) ? val : Object.values(val);
-        state.links = remoteList;
-        saveToStorage();
+        // 1. Links
+        if (val.links) {
+          const rawList = Array.isArray(val.links) ? val.links : Object.values(val.links);
+          rawList.sort((a, b) => ((typeof a.order === 'number') ? a.order : 999999) - ((typeof b.order === 'number') ? b.order : 999999));
+          state.links = rawList;
+          saveToStorage();
+        } else if (Array.isArray(val)) {
+          val.sort((a, b) => ((typeof a.order === 'number') ? a.order : 999999) - ((typeof b.order === 'number') ? b.order : 999999));
+          state.links = val;
+          saveToStorage();
+        }
+
+        // 2. Category Colors
+        if (val.categoryColors) {
+          if (Array.isArray(val.categoryColors)) {
+            val.categoryColors.forEach(item => {
+              if (item && item.name && item.color) {
+                state.categoryColors[item.name] = item.color;
+              }
+            });
+          } else if (typeof val.categoryColors === 'object') {
+            state.categoryColors = { ...state.categoryColors, ...val.categoryColors };
+          }
+          saveCategoryData(false);
+        }
+
+        // 3. Category Order
+        if (val.categoryOrder && Array.isArray(val.categoryOrder)) {
+          state.categoryOrder = val.categoryOrder;
+          saveCategoryData(false);
+        }
+
         renderApp();
       } else {
         // Jika cloud akun ini masih kosong dan kita punya data lokal, sinkronkan
